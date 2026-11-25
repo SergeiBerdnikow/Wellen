@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mechanische Wellen – Simulation</title>
+<style>
+  :root {
+    --hg: #ffffff; --flaeche: #f4f6f9; --rand: #d5dbe3; --text: #1b2430; --text2: #5a6675;
+    --akzent: #1f5c99;
+    --kurve1: #1f5c99; --kurve2: #c62828; --kurve3: #2e7d32;
+    --ausbreitung: #2e7d32; --schwingung: #c62828; --mass: #e08a00;
+    --schrift: system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--flaeche); color: var(--text); font-family: var(--schrift);
+         font-size: 1rem; line-height: 1.4; }
+  body.gross { font-size: 1.25rem; }
+  header { display: flex; align-items: center; gap: .8em; padding: .5em 1em;
+           background: var(--akzent); color: #fff; flex-wrap: wrap; }
+  header h1 { font-size: 1.3em; margin: 0; font-weight: 600; flex: 1 1 auto; }
+  header button { background: rgba(255,255,255,.15); color: #fff; border-color: rgba(255,255,255,.4); }
+  nav { display: flex; gap: .5em; padding: .6em .8em 0; flex-wrap: wrap; }
+  nav button { flex: 1 1 10em; font-weight: 600; text-align: left; line-height: 1.25; }
+  nav button small { display: block; font-weight: 400; color: var(--text2); }
+  nav button.aktiv { background: var(--akzent); color: #fff; outline: none; }
+  nav button.aktiv small { color: #dbe7f5; }
+  main { display: grid; gap: .8em; padding: .8em;
+         grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+         grid-template-areas: "szene diagramm" "regler steuerung" "info info"; }
+  @media (max-width: 900px) {
+    main { grid-template-columns: minmax(0, 1fr);
+           grid-template-areas: "szene" "regler" "steuerung" "diagramm" "info"; }
+  }
+  main.breit #szeneKarte { grid-column: 1 / -1; }
+  .karte { background: var(--hg); border: 1px solid var(--rand); border-radius: 10px; padding: .7em; min-width: 0; }
+  .karte h2 { font-size: 1em; margin: 0 0 .4em; color: var(--text2); font-weight: 600; }
+  #szeneKarte { grid-area: szene; } #diagrammKarte { grid-area: diagramm; }
+  #steuerKarte { grid-area: steuerung; } #reglerKarte { grid-area: regler; } #infoKarte { grid-area: info; }
+  canvas { display: block; width: 100%; touch-action: none; }
+  #szene { height: 46vh; min-height: 260px; }
+  #diagramm { height: 46vh; min-height: 220px; }
+  button { font: inherit; font-size: 1em; padding: .45em .9em; min-height: 2.6em; min-width: 2.6em;
+           border-radius: 8px; border: 1px solid var(--rand); background: var(--hg); color: var(--text);
+           cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  button:hover { border-color: var(--akzent); }
+  button:disabled { opacity: .45; }
+  button.haupt { background: var(--akzent); color: #fff; border-color: var(--akzent); font-weight: 600; }
+  button.aktiv { outline: 3px solid var(--akzent); outline-offset: 1px; }
+  .zeile { display: flex; flex-wrap: wrap; gap: .5em; align-items: center; }
+  .messwerte { display: grid; grid-template-columns: repeat(auto-fit, minmax(9em, 1fr)); gap: .3em .8em;
+               margin-top: .6em; font-variant-numeric: tabular-nums; }
+  .messwerte div { background: var(--flaeche); border-radius: 6px; padding: .25em .5em; }
+  .regler { display: grid; grid-template-columns: repeat(auto-fit, minmax(14em, 1fr)); gap: .6em 1.4em; }
+  .regler:empty { display: none; }
+  .regler label { display: block; font-weight: 600; }
+  .regler .wert { float: right; font-weight: 400; font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; height: 2.4em; accent-color: var(--akzent); }
+  .presets { margin-top: .7em; }
+  .presets:empty { display: none; }
+  .auftrag { background: #fff8e6; border-left: 5px solid var(--mass); border-radius: 6px;
+             padding: .5em .8em; margin: 0 0 .7em; }
+  #schritte { display: none; margin-top: .6em; padding: .6em .8em; border-left: 5px solid var(--akzent);
+              background: #eef4fb; border-radius: 6px; }
+  #schritte.an { display: block; }
+  #schrittText { font-size: 1.1em; margin: .2em 0 .5em; }
+  details summary { cursor: pointer; font-weight: 600; }
+  .klein { color: var(--text2); font-size: .85em; }
+  kbd { border: 1px solid var(--rand); border-bottom-width: 2px; border-radius: 4px; padding: 0 .3em;
+        font-size: .85em; background: var(--flaeche); }
+  /* Rechentrainer */
+  #trainer { display: none; }
+  #trainer.an { display: block; }
+  #aufgabeText { font-size: 1.2em; margin: .3em 0 .8em; }
+  .eingabe { display: flex; gap: .5em; align-items: center; flex-wrap: wrap; font-size: 1.2em; }
+  .eingabe input { font: inherit; width: 7em; padding: .35em .5em; border: 2px solid var(--rand);
+                   border-radius: 8px; text-align: right; }
+  #rueckmeldung { margin: .7em 0; padding: .5em .8em; border-radius: 6px; display: none; font-size: 1.1em; }
+  #rueckmeldung.richtig { display: block; background: #e8f5e9; border-left: 5px solid #2e7d32; }
+  #rueckmeldung.falsch { display: block; background: #fdecea; border-left: 5px solid #c62828; }
+  #tippBox, #wegBox { display: none; margin: .6em 0; padding: .5em .8em; background: var(--flaeche);
+                      border-radius: 6px; font-size: 1.05em; }
+  #wegBox div { margin: .15em 0; }
+  .formel { font-size: 1.15em; }
+  #stand { margin-top: .6em; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="titel">Mechanische Wellen</h1>
+  <button id="btnGross" title="Große Schrift für den Beamer (G)">Beamer-Ansicht</button>
+  <button id="btnVoll" title="Vollbild (F)">Vollbild</button>
+</header>
+<nav id="stationen"></nav>
+
+<main id="haupt">
+  <section class="karte" id="szeneKarte">
+    <div class="auftrag" id="auftrag"></div>
+    <canvas id="szene" aria-label="Animation der Welle"></canvas>
+    <div id="trainer">
+      <div class="zeile" style="justify-content:space-between">
+        <b id="aufgabeNr">Aufgabe</b>
+        <span class="zeile" id="niveau"></span>
+      </div>
+      <div id="aufgabeText"></div>
+      <div class="eingabe"><span id="gesuchtName"></span> = <input id="antwort" inputmode="decimal" autocomplete="off"> <span id="gesuchtEinheit"></span>
+        <button id="btnPruefen" class="haupt">Prüfen</button></div>
+      <div id="rueckmeldung"></div>
+      <div class="zeile">
+        <button id="btnTipp">Tipp</button>
+        <button id="btnWeg">Lösungsweg zeigen</button>
+        <button id="btnNeu" class="haupt">Neue Aufgabe ▶</button>
+      </div>
+      <div id="tippBox"></div>
+      <div id="wegBox"></div>
+      <div id="stand" class="klein"></div>
+    </div>
+  </section>
+
+  <section class="karte" id="diagrammKarte">
+    <h2 id="diagrammTitel">Diagramm</h2>
+    <canvas id="diagramm" aria-label="Diagramm"></canvas>
+    <div class="zeile" id="kurvenwahl"></div>
+  </section>
+
+  <section class="karte" id="steuerKarte">
+    <div class="zeile">
+      <button id="btnStart" class="haupt" title="Start/Pause (Leertaste)">▶ Start</button>
+      <button id="btnSchritt" title="Einzelschritt (→)">Einzelschritt</button>
+      <button id="btnReset" title="Zurücksetzen (R)">↺ Zurücksetzen</button>
+      <button id="btnLangsam" title="Zeitlupe umschalten (L)">Zeitlupe: aus</button>
+    </div>
+    <div class="messwerte" id="messwerte"></div>
+    <div id="schritte">
+      <div class="zeile" style="justify-content:space-between">
+        <b id="schrittNr"></b>
+        <span class="zeile"><button id="btnZurueck">◀ zurück</button><button id="btnWeiter" class="haupt">weiter ▶</button></span>
+      </div>
+      <div id="schrittText"></div>
+    </div>
+  </section>
+
+  <section class="karte" id="reglerKarte">
+    <h2 id="reglerTitel">Einstellungen</h2>
+    <div class="zeile" id="knoepfe"></div>
+    <div class="regler" id="regler" style="margin-top:.6em"></div>
+    <div class="zeile presets" id="anzeigen"></div>
+    <div class="zeile presets" id="extras">
+      <button id="btnSchrittmodus">Schritt für Schritt</button>
+      <button id="btnPNG" title="Bild von Welle und Diagramm speichern">Bild speichern (PNG)</button>
+    </div>
+  </section>
+
+  <section class="karte" id="infoKarte">
+    <details>
+      <summary>Was wird hier simuliert?</summary>
+      <div id="infoText"></div>
+    </details>
+    <p class="klein">Tastatur: <kbd>Leertaste</kbd> Start/Pause · <kbd>R</kbd> Zurücksetzen ·
+      <kbd>→</kbd> Einzelschritt · <kbd>L</kbd> Zeitlupe · <kbd>G</kbd> Beamer-Ansicht · <kbd>F</kbd> Vollbild ·
+      <kbd>1</kbd>–<kbd>4</kbd> Station</p>
+  </section>
+</main>
+
+<script>
+"use strict";
+/* =====================================================================
+   BAUKASTEN – allgemein verwendbar, in neuen Simulationen unverändert lassen
+   ===================================================================== */
+const $ = id => document.getElementById(id);
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+/** Schriftgröße auf der Leinwand – wächst in der Beamer-Ansicht mit */
+const fs = px => Math.round(px * (document.body.classList.contains("gross") ? 1.3 : 1));
+
+/** Zahl deutsch formatieren: fmt(1.234, 2, "m") -> "1,23 m" */
+function fmt(x, stellen = 2, einheit = "") {
+  if (!isFinite(x)) return "–";
+  const s = x.toLocaleString("de-DE", { minimumFractionDigits: stellen, maximumFractionDigits: stellen });
+  return einheit ? s + " " + einheit : s;
+}
+
+/** Canvas mit scharfer Darstellung (HiDPI). Liefert {ctx, b, h} in CSS-Pixeln, passt sich an. */
+function leinwand(canvas, beiGroesse) {
+  const obj = { canvas, ctx: canvas.getContext("2d"), b: 0, h: 0 };
+  const anpassen = (melden = true) => {
+    const r = canvas.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    obj.b = Math.max(1, r.width); obj.h = Math.max(1, r.height);
+    canvas.width = Math.round(obj.b * dpr); canvas.height = Math.round(obj.h * dpr);
+    obj.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (melden && beiGroesse) beiGroesse();
+  };
+  anpassen(false);                       // Größe sofort setzen, Neuzeichnen erst bei Änderungen
+  new ResizeObserver(() => anpassen()).observe(canvas);
+  return obj;
+}
+
+/** Pfeil zeichnen (für Kräfte, Geschwindigkeiten, Maße) */
+function pfeil(ctx, x1, y1, x2, y2, farbe, breite = 3, spitze = 12) {
+  const w = Math.atan2(y2 - y1, x2 - x1), l = Math.hypot(x2 - x1, y2 - y1);
+  if (l < 1) return;
+  const s = Math.min(spitze, l * 0.6);
+  ctx.save(); ctx.strokeStyle = ctx.fillStyle = farbe; ctx.lineWidth = breite; ctx.lineCap = "round";
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2 - s * 0.7 * Math.cos(w), y2 - s * 0.7 * Math.sin(w)); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - s * Math.cos(w - 0.4), y2 - s * Math.sin(w - 0.4));
+  ctx.lineTo(x2 - s * Math.cos(w + 0.4), y2 - s * Math.sin(w + 0.4)); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+/** Text mit Hintergrund (gut lesbar über Linien) */
+function beschriftung(ctx, text, x, y, { farbe = "#1b2430", groesse = 15, ausrichtung = "center",
+                                        grundlinie = "middle", fett = false, hintergrund = true } = {}) {
+  ctx.save(); groesse = fs(groesse); ctx.font = `${fett ? "600 " : ""}${groesse}px ${css("--schrift")}`;
+  ctx.textAlign = ausrichtung; ctx.textBaseline = grundlinie;
+  const m = ctx.measureText(text), pad = 3;
+  let x0 = ausrichtung === "center" ? x - m.width / 2 : ausrichtung === "right" ? x - m.width : x;
+  if (hintergrund) { ctx.fillStyle = "rgba(255,255,255,.85)";
+    ctx.fillRect(x0 - pad, y - groesse * 0.6 - pad, m.width + 2 * pad, groesse * 1.2 + 2 * pad); }
+  ctx.fillStyle = farbe; ctx.fillText(text, x, y); ctx.restore();
+}
+
+/** "Schöne" Achsenteilung */
+function teilung(min, max, ziel = 6) {
+  const roh = (max - min) / ziel, p = Math.pow(10, Math.floor(Math.log10(roh)));
+  const f = roh / p, schritt = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * p;
+  const t = []; for (let v = Math.ceil(min / schritt) * schritt; v <= max + 1e-9 * schritt; v += schritt) t.push(Math.abs(v) < 1e-9 * schritt ? 0 : v);
+  return { t, schritt, stellen: Math.max(0, -Math.floor(Math.log10(schritt) + 1e-9)) };
+}
+
+/**
+ * Live-Diagramm (Zeitreihen). Beispiel:
+ *   const d = new Diagramm(canvas, {xName:"t", xEinheit:"s", yName:"x", yEinheit:"m", fenster:10});
+ *   d.reihe("x", "Auslenkung", "#1f5c99");  d.punkt("x", t, x);  d.zeichnen();
+ * fenster = sichtbare Zeitspanne (mitlaufend); yMin/yMax fest oder automatisch.
+ */
+class Diagramm {
+  constructor(canvas, opt) {
+    this.o = Object.assign({ xName: "t", xEinheit: "s", yName: null, yEinheit: "", fenster: 10,
+                             yMin: null, yMax: null }, opt);
+    this.reihen = new Map(); this.lw = leinwand(canvas, () => this.zeichnen());
+  }
+  /** name = Text für den Knopf, achse = Achsenbeschriftung, z. B. "s in cm" */
+  reihe(id, name, farbe, sichtbar = true, achse = name) { this.reihen.set(id, { name, farbe, sichtbar, achse, d: [] }); }
+  punkt(id, x, y) { const r = this.reihen.get(id); r.d.push([x, y]); if (r.d.length > 20000) r.d.splice(0, 5000); }
+  leeren() { for (const r of this.reihen.values()) r.d = []; }
+  achsen(opt) { Object.assign(this.o, opt); }
+  zeichnen() {
+    const { ctx, b, h } = this.lw, o = this.o, R = { l: 62, r: 14, o: 18, u: 46 };
+    ctx.clearRect(0, 0, b, h);
+    const sicht = [...this.reihen.values()].filter(r => r.sichtbar);
+    let xMax = 0; for (const r of sicht) if (r.d.length) xMax = Math.max(xMax, r.d[r.d.length - 1][0]);
+    const x1 = Math.max(o.fenster, xMax), x0 = x1 - o.fenster;
+    let y0 = o.yMin, y1 = o.yMax;
+    if (y0 === null || y1 === null) {
+      let lo = Infinity, hi = -Infinity;
+      for (const r of sicht) for (const [x, y] of r.d) if (x >= x0) { lo = Math.min(lo, y); hi = Math.max(hi, y); }
+      if (!isFinite(lo)) { lo = -1; hi = 1; }
+      if (hi - lo < 1e-9) { lo -= 1; hi += 1; }
+      const rand = 0.1 * (hi - lo);
+      if (y0 === null) y0 = lo - rand; if (y1 === null) y1 = hi + rand;
+    }
+    const X = x => R.l + (x - x0) / (x1 - x0) * (b - R.l - R.r);
+    const Y = y => h - R.u - (y - y0) / (y1 - y0) * (h - R.o - R.u);
+    ctx.font = `${fs(13)}px ${css("--schrift")}`; ctx.lineWidth = 1;
+    const tx = teilung(x0, x1, Math.max(3, Math.floor(b / 90))), ty = teilung(y0, y1, Math.max(3, Math.floor(h / 55)));
+    ctx.strokeStyle = "#e3e7ec"; ctx.fillStyle = "#5a6675";
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    for (const v of tx.t) { ctx.beginPath(); ctx.moveTo(X(v), R.o); ctx.lineTo(X(v), h - R.u); ctx.stroke();
+                            ctx.fillText(fmt(v, tx.stellen), X(v), h - R.u + 5); }
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    for (const v of ty.t) { ctx.beginPath(); ctx.moveTo(R.l, Y(v)); ctx.lineTo(b - R.r, Y(v)); ctx.stroke();
+                            ctx.fillText(fmt(v, ty.stellen), R.l - 6, Y(v)); }
+    // Achsen (Nulllinie hervorheben)
+    ctx.strokeStyle = "#1b2430"; ctx.lineWidth = 1.5; ctx.beginPath();
+    const yNull = (y0 < 0 && y1 > 0) ? Y(0) : h - R.u;
+    ctx.moveTo(R.l, yNull); ctx.lineTo(b - R.r, yNull); ctx.moveTo(R.l, R.o); ctx.lineTo(R.l, h - R.u); ctx.stroke();
+    ctx.fillStyle = "#1b2430"; ctx.font = `600 ${fs(14)}px ${css("--schrift")}`;
+    ctx.textAlign = "right"; ctx.textBaseline = "bottom";
+    ctx.fillText(`${o.xName} in ${o.xEinheit}`, b - R.r, h - 4);
+    ctx.save(); ctx.translate(14, R.o); ctx.rotate(-Math.PI / 2); ctx.textAlign = "right"; ctx.textBaseline = "top";
+    const yText = o.yName ? (o.yEinheit ? `${o.yName} in ${o.yEinheit}` : o.yName) : sicht.map(r => r.achse).join(",  ");
+    ctx.fillText(yText, 0, 0); ctx.restore();
+    // Kurven
+    ctx.save(); ctx.beginPath(); ctx.rect(R.l, R.o, b - R.l - R.r, h - R.o - R.u); ctx.clip();
+    for (const r of sicht) {
+      ctx.strokeStyle = r.farbe; ctx.lineWidth = 2.5; ctx.beginPath(); let an = false;
+      for (const [x, y] of r.d) { if (x < x0 - 1e-9) continue; an ? ctx.lineTo(X(x), Y(y)) : ctx.moveTo(X(x), Y(y)); an = true; }
+      ctx.stroke();
+      if (r.d.length) { const [x, y] = r.d[r.d.length - 1]; ctx.fillStyle = r.farbe;
+                        ctx.beginPath(); ctx.arc(X(x), Y(y), 4.5, 0, 7); ctx.fill(); }
+    }
+    ctx.restore();
+  }
+  /** Knöpfe zum Ein-/Ausblenden der Kurven in ein Element einfügen */
+  auswahl(el) {
+    el.innerHTML = "";
+    for (const [id, r] of this.reihen) {
+      const k = document.createElement("button");
+      k.innerHTML = `<span style="color:${r.farbe}">━━</span> ${r.name}`;
+      k.classList.toggle("aktiv", r.sichtbar);
+      k.onclick = () => { r.sichtbar = !r.sichtbar; k.classList.toggle("aktiv", r.sichtbar); this.zeichnen(); };
+      el.appendChild(k);
+    }
+  }
+}
+
+/**
+ * Energiebalken. Beispiel:
+ *   const eb = new Balken(canvas, [{id:"pot", name:"E_Spann", farbe:css("--e-pot")}, ...], "J");
+ *   eb.zeichnen({pot: 0.2, kin: 0.1, ges: 0.3}, maxWert);
+ */
+class Balken {
+  constructor(canvas, arten, einheit = "J") { this.arten = arten; this.einheit = einheit;
+    this.lw = leinwand(canvas, () => this.letzte && this.zeichnen(...this.letzte)); }
+  zeichnen(werte, max) {
+    this.letzte = [werte, max];
+    const { ctx, b, h } = this.lw, n = this.arten.length, R = { l: 10, r: 10, o: 26, u: 30 };
+    ctx.clearRect(0, 0, b, h);
+    const bw = (b - R.l - R.r) / n, H = h - R.o - R.u, sk = max > 0 ? H / max : 0;
+    ctx.strokeStyle = "#1b2430"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(R.l, h - R.u); ctx.lineTo(b - R.r, h - R.u); ctx.stroke();
+    this.arten.forEach((a, i) => {
+      const v = Math.max(0, werte[a.id] || 0), x = R.l + i * bw + bw * 0.18, w = bw * 0.64;
+      ctx.fillStyle = a.farbe; ctx.fillRect(x, h - R.u - v * sk, w, v * sk);
+      ctx.font = `600 ${fs(14)}px ${css("--schrift")}`; ctx.fillStyle = "#1b2430"; ctx.textAlign = "center";
+      ctx.textBaseline = "top"; ctx.fillText(a.name, x + w / 2, h - R.u + 6);
+      ctx.textBaseline = "bottom"; ctx.font = `${fs(13)}px ${css("--schrift")}`;
+      ctx.fillText(fmt(werte[a.id] || 0, a.stellen ?? 2, this.einheit), x + w / 2, Math.max(R.o + 2, h - R.u - v * sk - 4));
+    });
+  }
+}
+
+/** Regler erzeugen. Liefert Objekt mit .wert; ruft beiAenderung(wert) auf. */
+function regler(container, { id, name, min, max, schritt, wert, einheit = "", stellen = 2, beiAenderung }) {
+  const box = document.createElement("div");
+  box.innerHTML = `<label for="r_${id}">${name} <span class="wert" id="w_${id}"></span></label>
+                   <input type="range" id="r_${id}" min="${min}" max="${max}" step="${schritt}" value="${wert}">`;
+  container.appendChild(box);
+  const inp = box.querySelector("input"), anz = box.querySelector(".wert");
+  const r = { get wert() { return parseFloat(inp.value); },
+              setzen(v) { inp.value = v; anz.textContent = fmt(parseFloat(inp.value), stellen, einheit); },
+              sperren(an) { inp.disabled = an; } };
+  r.setzen(wert);
+  inp.addEventListener("input", () => { anz.textContent = fmt(r.wert, stellen, einheit); beiAenderung && beiAenderung(r.wert); });
+  return r;
+}
+
+/** Datei aus der Seite heraus speichern (funktioniert offline) */
+function speichern(name, inhalt, typ) {
+  const a = document.createElement("a");
+  a.href = typeof inhalt === "string" ? URL.createObjectURL(new Blob([inhalt], { type: typ })) : inhalt;
+  a.download = name; document.body.appendChild(a); a.click(); a.remove();
+}
+
+/** Mehrere Canvas nebeneinander als ein PNG speichern */
+function alsPNG(name, canvasListe) {
+  const b = canvasListe.reduce((s, c) => s + c.width, 0), h = Math.max(...canvasListe.map(c => c.height));
+  const z = document.createElement("canvas"); z.width = b; z.height = h;
+  const ctx = z.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, b, h);
+  let x = 0; for (const c of canvasListe) { ctx.drawImage(c, x, 0); x += c.width; }
+  speichern(name, z.toDataURL("image/png"));
+}
+
+/**
+ * Simulationsschleife mit festem Zeitschritt (physikalisch sauber, unabhängig von der Bildrate).
+ *   const lauf = new Schleife({dt: 0.001, schritt: dt => {...}, bild: () => {...}});
+ *   lauf.start(); lauf.pause(); lauf.tempo = 0.2 (Zeitlupe)
+ */
+class Schleife {
+  constructor({ dt, schritt, bild, beiStatus }) {
+    Object.assign(this, { dt, schritt, bild, beiStatus, laeuft: false, tempo: 1, rest: 0, tAlt: 0 });
+    const tick = tJetzt => {
+      if (this.laeuft) {
+        let echt = Math.min(0.1, (tJetzt - this.tAlt) / 1000);   // nach Tab-Wechsel nicht springen
+        this.rest += echt * this.tempo;
+        let n = 0; while (this.rest >= this.dt && n < 20000) { this.schritt(this.dt); this.rest -= this.dt; n++; }
+      }
+      this.tAlt = tJetzt; this.bild(); requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+  start() { this.laeuft = true; this.beiStatus && this.beiStatus(true); }
+  pause() { this.laeuft = false; this.beiStatus && this.beiStatus(false); }
+  umschalten() { this.laeuft ? this.pause() : this.start(); }
+  einzelschritt(dauer) { this.pause(); const n = Math.round(dauer / this.dt); for (let i = 0; i < n; i++) this.schritt(this.dt); }
+}
+
+/**
+ * Schritt-für-Schritt-Modus zum Besprechen im Plenum.
+ *   schrittmodus([{text:"…", vorbereiten: () => {...}}, ...])
+ */
+function schrittmodus(schritte) {
+  let i = 0; const box = $("schritte");
+  const zeigen = () => { $("schrittNr").textContent = `Schritt ${i + 1} von ${schritte.length}`;
+    $("schrittText").innerHTML = schritte[i].text; schritte[i].vorbereiten && schritte[i].vorbereiten();
+    $("btnZurueck").disabled = i === 0; $("btnWeiter").disabled = i === schritte.length - 1; };
+  $("btnZurueck").onclick = () => { if (i > 0) { i--; zeigen(); } };
+  $("btnWeiter").onclick = () => { if (i < schritte.length - 1) { i++; zeigen(); } };
+  return { an() { box.classList.add("an"); i = 0; zeigen(); }, aus() { box.classList.remove("an"); },
+           get aktiv() { return box.classList.contains("an"); } };
+}
+
+/** Vollbild, Beamer-Ansicht, Tastatur */
+function bedienungEinrichten(lauf, { reset, einzel }) {
+  $("btnVoll").onclick = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+  $("btnGross").onclick = () => { document.body.classList.toggle("gross"); $("btnGross").classList.toggle("aktiv"); };
+  $("btnStart").onclick = () => lauf.umschalten();
+  $("btnReset").onclick = reset;
+  $("btnSchritt").onclick = einzel;
+  $("btnLangsam").onclick = () => { lauf.tempo = lauf.tempo === 1 ? 0.2 : 1;
+    $("btnLangsam").textContent = `Zeitlupe: ${lauf.tempo === 1 ? "aus" : "an (×0,2)"}`;
+    $("btnLangsam").classList.toggle("aktiv", lauf.tempo !== 1); };
+  lauf.beiStatus = an => { $("btnStart").textContent = an ? "❚❚ Pause" : "▶ Start"; };
+  document.addEventListener("keydown", e => {
+    if (e.target.tagName === "INPUT" && e.key !== " ") return;
+    const k = e.key.toLowerCase();
+    if (k === " ") { e.preventDefault(); lauf.umschalten(); }
+    else if (k === "r") reset(); else if (k === "arrowright") einzel();
+    else if (k === "l") $("btnLangsam").click(); else if (k === "g") $("btnGross").click();
+    else if (k === "f") $("btnVoll").click();
+  });
+}
+
+
+/* =====================================================================
+   MODELL – Mechanische Wellen (nach LEIFIphysik: Wellen, Wellentypen,
+   Größen zur Beschreibung einer Welle)
+   Harmonische Welle, ungedämpft:  y(x,t) = A·sin(2π·f·(t − x/c))  für t ≥ x/c, sonst 0
+   (die Störung braucht die Zeit x/c bis zum Ort x). Exakte Lösung, kein Integrator nötig.
+   ===================================================================== */
+const P = { f: 0.5, c: 1.5, A: 0.4 };                    // Erreger: f, A – Träger: c
+const Z = { t: 0 };
+const S = { station: 1, modus: "puls", kopplung: true, typ: "quer", begriffe: false,
+            zeigLambda: false, zeigA: false, zeigFront: true };
+const L = 6;                                              // Länge des Wellenträgers in m
+const XM = 1.5;                                           // Ort des roten Teilchens in m
+const T = () => 1 / P.f, lam = () => P.c / P.f, om = () => 2 * Math.PI * P.f;
+
+/** Auslenkung des Erregers (normiert auf 1) zur Zeit t */
+function erreger(t) {
+  if (t < 0) return 0;
+  if (S.modus === "puls" && t > T() / 2) return 0;       // Puls = ein Wellenberg (halbe Schwingung)
+  return Math.sin(om() * t);
+}
+/** Auslenkung (normiert) eines Teilchens am Ort x */
+function welle(x, t) {
+  if (!S.kopplung && x > 1e-9) return 0;                 // ohne Kopplung bleibt alles in Ruhe
+  return erreger(t - x / P.c);
+}
+/** Auslenkung in m für die aktuelle Darstellung */
+function amplitude() {
+  if (S.station === 2 && S.typ === "laengs") return 0.22;
+  if (S.station === 2 && S.typ === "wasser") return 0.3;
+  return P.A;
+}
+
+function physikSchritt(dt) {
+  Z.t += dt;
+  if (Math.round(Z.t / dt) % 20 === 0) aufzeichnen();
+}
+function aufzeichnen() { diagramm.punkt("y", Z.t, amplitude() * markWert()); }
+function markWert() {
+  if (S.station === 2 && S.typ === "wasser") { const k = 2 * Math.PI / lam(); return Math.cos(k * XM - om() * Z.t); }
+  if (S.station === 2 && S.typ === "kreis") return welle(Math.hypot(XM, 0.6), Z.t);
+  return welle(XM, Z.t);
+}
+
+/* ---------- Szene ---------- */
+const szene = leinwand($("szene"), () => szeneZeichnen());
+const AUSB = () => css("--ausbreitung"), SCHW = () => css("--schwingung"), MASS = () => css("--mass");
+
+function doppelpfeil(ctx, x1, y1, x2, y2, farbe, breite = 2.5) {
+  pfeil(ctx, (x1 + x2) / 2, (y1 + y2) / 2, x2, y2, farbe, breite, 10);
+  pfeil(ctx, (x1 + x2) / 2, (y1 + y2) / 2, x1, y1, farbe, breite, 10);
+}
+function kugel(ctx, x, y, r, farbe) {
+  ctx.fillStyle = farbe; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+  ctx.strokeStyle = "rgba(0,0,0,.35)"; ctx.lineWidth = 1; ctx.stroke();
+}
+function feder(ctx, xa, ya, xb, yb, n = 4) {
+  const l = Math.hypot(xb - xa, yb - ya); if (l < 2) return;
+  const ux = (xb - xa) / l, uy = (yb - ya) / l, nx = -uy, ny = ux, amp = Math.min(5, l * 0.18);
+  ctx.beginPath(); ctx.moveTo(xa, ya);
+  for (let i = 1; i <= 2 * n; i++) { const s = (i - 0.5) / (2 * n) * l, q = (i % 2 ? 1 : -1) * amp;
+    ctx.lineTo(xa + ux * s + nx * q, ya + uy * s + ny * q); }
+  ctx.lineTo(xb, yb); ctx.stroke();
+}
+/** Wellenberge (phase = π/2) bzw. -täler (3π/2) im Momentbild, nur bereits erreichte Orte */
+function extremstellen(phase) {
+  const xs = []; if (S.modus === "puls" && phase > Math.PI) return xs;
+  for (let n = 0; n < 40; n++) {
+    const tEin = (phase / (2 * Math.PI) + n) * T();       // Zeitpunkt, an dem der Erreger diese Phase hatte
+    const x = P.c * (Z.t - tEin);
+    if (S.modus === "puls" && n > 0) break;
+    if (x >= -1e-9 && x <= L + 1e-9) xs.push(x);
+  }
+  return xs.sort((a, b) => a - b);
+}
+
+function rahmen(hoehe) {                                  // Maßstab: Träger von −0,9 m bis 6,3 m
+  const { b, h } = szene, s = Math.min((b - 20) / 7.2, (h - 20) / hoehe);
+  const x0 = 10 + (b - 20 - 7.2 * s) / 2 + 0.9 * s;
+  return { s, X: x => x0 + x * s };
+}
+
+function szeneZeichnen() {
+  const { ctx, b, h } = szene; ctx.clearRect(0, 0, b, h);
+  if (S.station === 4) return;
+  if (S.station === 2 && (S.typ === "kreis" || S.typ === "eben")) return draufsicht(ctx, b, h);
+  if (S.station === 2 && S.typ === "wasser") return wasser(ctx, b, h);
+  if (S.station === 2 && S.typ === "laengs") return laengs(ctx, b, h);
+  quer(ctx, b, h);
+}
+
+/* Querwelle (Stationen 1, 2, 3) */
+function quer(ctx, b, h) {
+  const st3 = S.station === 3, A = amplitude();
+  const { s: s0, X } = rahmen(st3 ? 2 * 0.6 + 1.3 : 2 * A + 1.4);
+  const sy = Math.min(2 * s0, (h - fs(110)) / (st3 ? 1.2 : 2 * A + 0.9)), s = s0;
+  const mitte = st3 ? h / 2 + fs(8) : h / 2 + fs(20), Y = y => mitte - y * sy;
+  // Gitter mit Maßstab (Station 3: zum Ablesen von λ und A)
+  if (st3) {
+    ctx.font = `${fs(12)}px ${css("--schrift")}`; ctx.fillStyle = "#5a6675"; ctx.textAlign = "center"; ctx.textBaseline = "top";
+    for (let x = 0; x <= L + 1e-9; x += 0.5) {
+      ctx.strokeStyle = Math.abs(x - Math.round(x)) < 1e-9 ? "#c3cbd6" : "#e3e7ec"; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(X(x), Y(0.6)); ctx.lineTo(X(x), Y(-0.6)); ctx.stroke();
+      if (Math.abs(x - Math.round(x)) < 1e-9) ctx.fillText(fmt(x, 0), X(x), Y(-0.6) + 4);
+    }
+    for (let y = -0.6; y <= 0.6 + 1e-9; y += 0.2) {
+      ctx.strokeStyle = "#e3e7ec"; ctx.beginPath(); ctx.moveTo(X(0), Y(y)); ctx.lineTo(X(L), Y(y)); ctx.stroke();
+    }
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    for (const y of [-0.4, -0.2, 0.2, 0.4]) ctx.fillText(fmt(y, 1), X(0) - 4, Y(y));
+    beschriftung(ctx, "x in m", X(L), Y(-0.6) + fs(26), { groesse: 13, ausrichtung: "right", fett: true });
+    beschriftung(ctx, "y in m", X(0) - 4, Y(0.6) - fs(10), { groesse: 13, ausrichtung: "right", fett: true });
+  }
+  // Ruhelage
+  ctx.setLineDash([6, 6]); ctx.strokeStyle = "#8a96a5"; ctx.lineWidth = 1.3;
+  ctx.beginPath(); ctx.moveTo(X(0), Y(0)); ctx.lineTo(X(L), Y(0)); ctx.stroke(); ctx.setLineDash([]);
+  // Erreger (Hand mit Stab)
+  const ye = A * welle(0, Z.t);
+  ctx.fillStyle = "#8a96a5"; ctx.fillRect(X(-0.75), Y(ye) - 0.12 * s, 0.45 * s, 0.24 * s); // Hand
+  ctx.strokeStyle = "#5a6675"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(X(-0.3), Y(ye)); ctx.lineTo(X(0), Y(ye)); ctx.stroke();
+  doppelpfeil(ctx, X(-0.52), Y(A) - 4, X(-0.52), Y(-A) + 4, "rgba(90,102,117,.5)", 2);
+  // Seil bzw. Kugel-Feder-Kette
+  const dx = st3 ? 0.125 : 0.25, n = Math.round(L / dx);
+  if (st3) {
+    ctx.strokeStyle = "#1f5c99"; ctx.lineWidth = 3; ctx.beginPath();
+    for (let i = 0; i <= 600; i++) { const x = i / 600 * L; i ? ctx.lineTo(X(x), Y(A * welle(x, Z.t))) : ctx.moveTo(X(x), Y(A * welle(x, Z.t))); }
+    ctx.stroke();
+  } else if (S.kopplung) {
+    ctx.strokeStyle = "#7a8594"; ctx.lineWidth = 1.6;
+    for (let i = 0; i < n; i++) feder(ctx, X(i * dx), Y(A * welle(i * dx, Z.t)), X((i + 1) * dx), Y(A * welle((i + 1) * dx, Z.t)));
+  }
+  const r = st3 ? Math.max(3, 0.035 * s) : Math.max(5, Math.min(11, 0.075 * s));
+  for (let i = 0; i <= n; i++) {
+    const x = i * dx, mark = Math.abs(x - XM) < 1e-6;
+    kugel(ctx, X(x), Y(A * welle(x, Z.t)), mark ? r * 1.35 : r, mark ? "#c62828" : (i === 0 ? "#5a6675" : "#1f5c99"));
+  }
+  // Ausbreitungsrichtung
+  const yA = st3 ? Y(0.6) - fs(22) : Y(A) - fs(40);
+  if (!st3 || S.begriffe) {
+    pfeil(ctx, X(3.6), yA, X(5.6), yA, AUSB(), 3.5, 14);
+    beschriftung(ctx, "Ausbreitungsrichtung", X(4.6), yA - fs(14), { groesse: 14, farbe: AUSB(), fett: true });
+  }
+  // Begriffe
+  if (S.begriffe) {
+    const ym = Y(A * welle(XM, Z.t));
+    doppelpfeil(ctx, X(XM) + r * 2.6, Y(A), X(XM) + r * 2.6, Y(-A), SCHW());
+    beschriftung(ctx, "Schwingungsrichtung", X(XM) + r * 3.5, Y(-A) + fs(38), { groesse: 13, farbe: SCHW(), fett: true, ausrichtung: "left" });
+    if (S.station === 1) {
+      beschriftung(ctx, "Erreger", X(-0.52), Y(-A) + fs(30), { groesse: 13, fett: true });
+      beschriftung(ctx, "Ruhelage", X(L) , Y(0) + fs(14), { groesse: 12, farbe: "#5a6675", ausrichtung: "right" });
+      if (S.kopplung) beschriftung(ctx, "Feder = Kopplung", X(4.375), Y(A * welle(4.375, Z.t)) + fs(26), { groesse: 12, farbe: "#5a6675" });
+      beschriftung(ctx, "Teilchen", X(3.0), Y(A * welle(3.0, Z.t)) - fs(22), { groesse: 12, farbe: "#1f5c99" });
+    }
+    if (S.station === 2 || S.station === 3) {
+      for (const x of extremstellen(Math.PI / 2).slice(-2)) beschriftung(ctx, "Wellenberg", X(x), Y(A) - fs(14), { groesse: 13, fett: true, farbe: "#1f5c99" });
+      for (const x of extremstellen(1.5 * Math.PI).slice(-2)) beschriftung(ctx, "Wellental", X(x), Y(-A) + fs(16), { groesse: 13, fett: true, farbe: "#1f5c99" });
+    }
+  }
+  if (st3) {
+    const berge = extremstellen(Math.PI / 2);
+    const gleich = berge.length >= 2 ? berge : extremstellen(0);
+    if (S.zeigLambda && gleich.length >= 2) {
+      const xa = gleich[0], xb = gleich[1], yl = Y(Math.max(A, 0.3)) - fs(30);
+      ctx.strokeStyle = MASS(); ctx.lineWidth = 1.2; ctx.setLineDash([4, 4]);
+      ctx.beginPath(); ctx.moveTo(X(xa), Y(A * welle(xa, Z.t))); ctx.lineTo(X(xa), yl); ctx.moveTo(X(xb), Y(A * welle(xb, Z.t))); ctx.lineTo(X(xb), yl); ctx.stroke(); ctx.setLineDash([]);
+      doppelpfeil(ctx, X(xa), yl, X(xb), yl, MASS(), 3);
+      beschriftung(ctx, "λ = " + fmt(lam(), 2, "m"), X((xa + xb) / 2), yl - fs(13), { groesse: 15, farbe: MASS(), fett: true });
+    }
+    if (S.zeigA && berge.length >= 1) {
+      const xa = berge.reduce((m, x) => Math.abs(x - 3.6) < Math.abs(m - 3.6) ? x : m, berge[0]);
+      ctx.strokeStyle = "#7b3294"; ctx.lineWidth = 1.2; ctx.setLineDash([4, 4]); ctx.beginPath();
+      ctx.moveTo(X(xa) - 30, Y(A)); ctx.lineTo(X(xa) + 30, Y(A)); ctx.stroke(); ctx.setLineDash([]);
+      doppelpfeil(ctx, X(xa) + 24, Y(0), X(xa) + 24, Y(A), "#7b3294", 3);
+      beschriftung(ctx, "A = " + fmt(A, 2, "m"), X(xa) + 30, Y(A / 2), { groesse: 14, farbe: "#7b3294", fett: true, ausrichtung: "left" });
+    }
+    if (S.zeigFront && P.c * Z.t < L) {
+      const xf = P.c * Z.t;
+      ctx.strokeStyle = AUSB(); ctx.lineWidth = 2; ctx.setLineDash([3, 5]);
+      ctx.beginPath(); ctx.moveTo(X(xf), Y(0.6)); ctx.lineTo(X(xf), Y(-0.6)); ctx.stroke(); ctx.setLineDash([]);
+      beschriftung(ctx, "Front: " + fmt(xf, 2, "m"), X(xf) + 4, Y(-0.45), { groesse: 12, farbe: AUSB(), ausrichtung: "left" });
+    }
+  }
+}
+
+/* Längswelle (Station 2) */
+function laengs(ctx, b, h) {
+  const A = amplitude(), { s, X } = rahmen(2.2), dx = 0.15, n = Math.round(L / dx), mitte = h / 2 + 0.15 * s;
+  const reihen = [-0.3, -0.1, 0.1, 0.3];
+  const lage = x => x + A * welle(x, Z.t);
+  ctx.fillStyle = "#8a96a5"; ctx.fillRect(X(lage(0)) - 0.4 * s, mitte - 0.45 * s, 0.25 * s, 0.9 * s);
+  beschriftung(ctx, "Erreger", X(lage(0)) - 0.28 * s, mitte + 0.62 * s, { groesse: 12, fett: S.begriffe });
+  doppelpfeil(ctx, X(-0.28 - A), mitte - 0.58 * s, X(-0.28 + A), mitte - 0.58 * s, "rgba(90,102,117,.5)", 2);
+  for (const ry of reihen) {
+    const y = mitte - ry * s;
+    ctx.strokeStyle = "#9aa4b1"; ctx.lineWidth = 1.2;
+    for (let i = 0; i < n; i++) feder(ctx, X(lage(i * dx)), y, X(lage((i + 1) * dx)), y, 3);
+    for (let i = 0; i <= n; i++) { const x = i * dx, mark = Math.abs(x - XM) < 1e-6 && ry === 0.1;
+      kugel(ctx, X(lage(x)), y, mark ? 7.5 : Math.max(3.5, Math.min(6, 0.04 * s)), mark ? "#c62828" : "#1f5c99"); }
+  }
+  const yA = mitte - 0.75 * s;
+  pfeil(ctx, X(3.6), yA, X(5.6), yA, AUSB(), 3.5, 14);
+  beschriftung(ctx, "Ausbreitungsrichtung", X(4.6), yA - fs(14), { groesse: 14, farbe: AUSB(), fett: true });
+  if (S.begriffe) {
+    const ys = mitte + 0.55 * s;
+    doppelpfeil(ctx, X(XM - 0.32), ys, X(XM + 0.32), ys, SCHW());
+    beschriftung(ctx, "Schwingungsrichtung", X(XM), ys + fs(16), { groesse: 13, farbe: SCHW(), fett: true });
+    const dicht = extremstellen(0).filter(x => x > 0.2), duenn = extremstellen(Math.PI).filter(x => x > 0.2);
+    for (const x of dicht.slice(-2)) { const xp = X(lage(x));
+      ctx.fillStyle = "rgba(198,40,40,.10)"; ctx.fillRect(xp - 0.3 * s, mitte - 0.42 * s, 0.6 * s, 0.84 * s);
+      beschriftung(ctx, "Verdichtung", xp, mitte - 0.5 * s, { groesse: 13, fett: true, farbe: "#c62828" }); }
+    for (const x of duenn.slice(-2)) { const xp = X(lage(x));
+      beschriftung(ctx, "Verdünnung", xp, mitte - 0.5 * s, { groesse: 13, fett: true, farbe: "#1f5c99" }); }
+  }
+}
+
+/* Wasserwelle (Station 2): Teilchen auf Kreisbahnen, Radius nimmt mit der Tiefe ab */
+function wasser(ctx, b, h) {
+  const A = amplitude(), k = 2 * Math.PI / lam(), { s, X } = rahmen(3.0), oben = h / 2 - 0.9 * s, Y = y => oben - y * s;
+  const tiefen = [0, 0.35, 0.7, 1.05, 1.4], boden = -1.75, dx = 0.3;
+  const pos = (x0, z) => { const r = A * Math.exp(-k * z), th = k * x0 - om() * Z.t;
+                           return [x0 - r * Math.sin(th), -z + r * Math.cos(th), r]; };
+  // Wasserkörper
+  ctx.fillStyle = "#dcebf7"; ctx.beginPath(); ctx.moveTo(X(0), Y(boden));
+  for (let i = 0; i <= 200; i++) { const [x, y] = pos(i / 200 * L, 0); ctx.lineTo(X(x), Y(y)); }
+  ctx.lineTo(X(L), Y(boden)); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = "#1f5c99"; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= 200; i++) { const [x, y] = pos(i / 200 * L, 0); i ? ctx.lineTo(X(x), Y(y)) : ctx.moveTo(X(x), Y(y)); }
+  ctx.stroke();
+  ctx.fillStyle = "#d9c9a3"; ctx.fillRect(X(0), Y(boden), L * s, 0.18 * s);
+  beschriftung(ctx, "Boden", X(0.5), Y(boden - 0.09), { groesse: 12, hintergrund: false, farbe: "#6b5a35" });
+  for (const z of tiefen) for (let x0 = 0.15; x0 < L; x0 += dx) {
+    const [x, y, r] = pos(x0, z), mark = z === 0 && Math.abs(x0 - 1.35) < 1e-6;
+    if (Math.abs(x0 - 1.35) < 1e-6) { ctx.strokeStyle = "rgba(198,40,40,.55)"; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
+      ctx.beginPath(); ctx.arc(X(x0), Y(-z), r * s, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
+    kugel(ctx, X(x), Y(y), mark ? 7.5 : 4.5, mark ? "#c62828" : "#1f5c99");
+  }
+  const yA = Y(A) - 0.3 * s;
+  pfeil(ctx, X(3.6), yA, X(5.6), yA, AUSB(), 3.5, 14);
+  beschriftung(ctx, "Ausbreitungsrichtung", X(4.6), yA - fs(14), { groesse: 14, farbe: AUSB(), fett: true });
+  if (S.begriffe) {
+    const xb = (om() * Z.t / k) % lam();            // Wellenberg: th = 0 (mod 2π)
+    for (let x = xb; x < L; x += lam()) if (x > 0.3) beschriftung(ctx, "Wellenberg", X(x), Y(A) - fs(12), { groesse: 13, fett: true, farbe: "#1f5c99" });
+    beschriftung(ctx, "Kreisbahn", X(1.35) + A * s + 8, Y(-0.15), { groesse: 13, fett: true, farbe: SCHW(), ausrichtung: "left" });
+    beschriftung(ctx, "kleine Kreise in der Tiefe", X(1.35) + 0.25 * s, Y(-1.4), { groesse: 12, farbe: "#5a6675", ausrichtung: "left" });
+  }
+}
+
+/* Draufsicht (Station 2): Kreiswelle bzw. ebene Welle */
+const feld = document.createElement("canvas"); feld.width = 180; feld.height = 100;
+function draufsicht(ctx, b, h) {
+  const breite = L + 0.6, s = Math.min((b - 20) / breite, (h - 20) / 3.4), hoehe = (h - 20) / s;
+  const ox = 10 + (b - 20 - breite * s) / 2, oy = 10, X = x => ox + (x + 0.3) * s, Y = y => oy + (hoehe / 2 - y) * s;
+  const kreis = S.typ === "kreis", qx = kreis ? 1.5 : 0, A = P.A;
+  const fctx = feld.getContext("2d"), img = fctx.createImageData(feld.width, feld.height);
+  for (let j = 0; j < feld.height; j++) for (let i = 0; i < feld.width; i++) {
+    const x = (i + 0.5) / feld.width * breite - 0.3, y = hoehe / 2 - (j + 0.5) / feld.height * hoehe;
+    const r = kreis ? Math.hypot(x - qx, y) : Math.max(0, x);
+    const v = (!kreis && x < 0) ? 0 : welle(r, Z.t), p = 4 * (j * feld.width + i);
+    img.data[p] = 120 + 90 * v; img.data[p + 1] = 170 + 60 * v; img.data[p + 2] = 220 + 30 * v; img.data[p + 3] = 255;
+  }
+  fctx.putImageData(img, 0, 0);
+  ctx.imageSmoothingEnabled = true; ctx.drawImage(feld, ox, oy, breite * s, hoehe * s);
+  ctx.strokeStyle = "#1b2430"; ctx.lineWidth = 1; ctx.strokeRect(ox, oy, breite * s, hoehe * s);
+  kugel(ctx, X(qx + XM), Y(-0.6), 7, "#c62828");
+  if (kreis) { kugel(ctx, X(qx), Y(0), 7, "#5a6675"); }
+  else { ctx.fillStyle = "#5a6675"; ctx.fillRect(X(-0.15) - 4, oy + 4, 8, hoehe * s - 8); }
+  beschriftung(ctx, kreis ? "Erreger (Tropfen)" : "Erreger (Lineal)", kreis ? X(qx) : X(0) + 10, kreis ? Y(0) + fs(20) : oy + fs(14),
+               { groesse: 12, fett: true, ausrichtung: kreis ? "center" : "left" });
+  if (S.begriffe) {
+    ctx.save(); ctx.beginPath(); ctx.rect(ox, oy, breite * s, hoehe * s); ctx.clip();
+    const berge = extremstellen(Math.PI / 2).filter(r => r > 0.15);
+    ctx.strokeStyle = "#1b2430"; ctx.lineWidth = 2;
+    for (const r of berge) { ctx.beginPath();
+      if (kreis) ctx.arc(X(qx), Y(0), r * s, 0, 7); else { ctx.moveTo(X(r), oy); ctx.lineTo(X(r), oy + hoehe * s); }
+      ctx.stroke(); }
+    if (berge.length) { const r = berge[berge.length - 1];
+      beschriftung(ctx, "Wellenfront", kreis ? X(qx) + r * s * 0.71 : X(r), kreis ? Y(r * 0.71) : oy + hoehe * s - fs(14), { groesse: 13, fett: true }); }
+    const rFront = P.c * Z.t;
+    if (rFront > 0.6) {
+      const strahlen = kreis ? [0, 1, 2, 3, 4, 5, 6, 7].map(k => [qx, 0, k * Math.PI / 4]) : [-1, 0, 1].map(y => [0.05, y, 0]);
+      for (const [xq, yq, w] of strahlen) {
+        const cw = Math.cos(w), sw = Math.sin(w);
+        let r = rFront;                                        // bis zur Front, aber nicht über den Rand hinaus
+        if (cw > 1e-9) r = Math.min(r, (L + 0.2 - xq) / cw); if (cw < -1e-9) r = Math.min(r, (-0.2 - xq) / cw);
+        if (Math.abs(sw) > 1e-9) r = Math.min(r, (hoehe / 2 - 0.15) / Math.abs(sw));
+        const r0 = kreis ? 0.3 : 0;
+        if (r > r0 + 0.25) pfeil(ctx, X(xq + r0 * cw), Y(yq + r0 * sw), X(xq + r * cw), Y(yq + r * sw), SCHW(), 2.5, 11);
+      }
+      const rl = Math.min(rFront, kreis ? L + 0.2 - qx : L + 0.15);
+      beschriftung(ctx, "Wellenstrahl", X(qx + rl) - 6, Y(0) - fs(14), { groesse: 13, fett: true, farbe: SCHW(), ausrichtung: "right" });
+    }
+    ctx.restore();
+  }
+}
+
+/* ---------- Diagramm und Messwerte ---------- */
+const diagramm = new Diagramm($("diagramm"), { xName: "t", xEinheit: "s", yName: "y", yEinheit: "m", fenster: 10, yMin: -0.65, yMax: 0.65 });
+diagramm.reihe("y", "Auslenkung des roten Teilchens", css("--kurve2"), true, "y in m");
+diagramm.auswahl($("kurvenwahl"));
+
+function messwerteZeigen() {
+  const ym = amplitude() * markWert();
+  let html = `<div><b>t</b> = ${fmt(Z.t, 2, "s")}</div><div><b style="color:#c62828">y</b><sub>rot</sub> = ${fmt(ym, 2, "m")}</div>`;
+  if (S.station === 3) {
+    html += `<div><b>f</b> = ${fmt(P.f, 2, "Hz")}</div><div><b>T</b> = ${fmt(T(), 2, "s")}</div>
+             <div><b>c</b> = ${fmt(P.c, 2, "m/s")}</div>
+             <div><b>λ</b> = ${S.zeigLambda ? fmt(lam(), 2, "m") : "? (selbst ablesen)"}</div>`;
+  }
+  $("messwerte").innerHTML = html;
+}
+
+/* ---------- Stationen ---------- */
+const STATIONEN = [
+  { name: "1 Was ist eine Welle?", info: "Erreger, Teilchen, Kopplung" },
+  { name: "2 Wellentypen", info: "Quer-, Längs-, Wasserwelle" },
+  { name: "3 Größen einer Welle", info: "A, T, f, c und λ messen" },
+  { name: "4 Rechnen", info: "Trainer zu λ = c / f" },
+];
+const AUFTRAG = {
+  1: "Tippe auf <b>„Einmal anstoßen“</b> und beobachte nur die <b style='color:#c62828'>rote Kugel</b>. Wandert sie mit nach rechts? Schalte danach die <b>Kopplung</b> aus und stoße noch einmal an.",
+  2: "Wähle nacheinander die Wellentypen. Achte darauf, <b>in welche Richtung die rote Kugel schwingt</b> – verglichen mit der Ausbreitungsrichtung. Mit <b>„Begriffe zeigen“</b> kannst du deine Beschriftung im Heft prüfen.",
+  3: "Stelle <b>f</b> und <b>c</b> wie in der Tabelle im Heft ein, starte, und halte an, wenn die Welle das Ende erreicht hat. Lies die <b>Wellenlänge λ</b> am Gitter ab (Abstand zweier Wellenberge). Erst danach mit „λ einzeichnen“ prüfen!",
+  4: "Löse die Aufgaben im Heft und übe hier weiter. Gib dein Ergebnis mit <b>Komma</b> ein, z. B. 1,5. Stufe 1 = nur einsetzen, Stufe 2 = Formel umstellen, Stufe 3 = erst f oder c bestimmen, <b>Vorsätze</b> = erst umrechnen (km, cm, mm, ms, kHz).",
+};
+for (let i = 1; i <= 4; i++) {
+  const k = document.createElement("button"); k.id = "st" + i;
+  k.innerHTML = `${STATIONEN[i - 1].name}<small>${STATIONEN[i - 1].info}</small>`;
+  k.onclick = () => stationWaehlen(i); $("stationen").appendChild(k);
+}
+
+const R = {};
+function knopf(ziel, text, aktion, aktiv) {
+  const k = document.createElement("button"); k.innerHTML = text;
+  k.onclick = () => { aktion(k); }; if (aktiv !== undefined) k.classList.toggle("aktiv", aktiv);
+  $(ziel).appendChild(k); return k;
+}
+function umschalter(ziel, text, schluessel) {
+  const k = knopf(ziel, text, k => { S[schluessel] = !S[schluessel]; k.classList.toggle("aktiv", S[schluessel]); }, S[schluessel]);
+  return k;
+}
+function gruppe(ziel, optionen, aktuell, beiWahl) {
+  const ks = optionen.map(([wert, text]) => knopf(ziel, text, () => {
+    ks.forEach(x => x.classList.remove("aktiv")); ks[optionen.findIndex(o => o[0] === wert)].classList.add("aktiv"); beiWahl(wert); },
+    wert === aktuell));
+  return ks;
+}
+
+let schritte = schrittmodus([{ text: "" }]);
+function neuStart() { lauf.pause(); Z.t = 0; diagramm.leeren(); aufzeichnen(); }
+
+function stationWaehlen(i) {
+  S.station = i; schritte.aus();
+  for (let j = 1; j <= 4; j++) $("st" + j).classList.toggle("aktiv", j === i);
+  $("auftrag").innerHTML = AUFTRAG[i];
+  ["knoepfe", "regler", "anzeigen"].forEach(id => $(id).innerHTML = "");
+  const trainer = i === 4;
+  $("szene").style.display = trainer ? "none" : "";
+  $("trainer").classList.toggle("an", trainer);
+  $("diagrammKarte").style.display = trainer ? "none" : "";
+  $("steuerKarte").style.display = trainer ? "none" : "";
+  $("reglerKarte").style.display = trainer ? "none" : "";
+  $("haupt").classList.toggle("breit", trainer);
+  $("btnSchrittmodus").style.display = (i === 1 || i === 3) ? "" : "none";
+  S.begriffe = false;
+  if (i === 1) {
+    Object.assign(P, { f: 0.5, c: 1.5, A: 0.4 }); Object.assign(S, { modus: "puls", kopplung: true });
+    $("reglerTitel").textContent = "Erreger und Kopplung";
+    gruppe("knoepfe", [["puls", "Einmal anstoßen"], ["dauer", "Dauernd schwingen"]], S.modus, w => { S.modus = w; neuStart(); lauf.start(); });
+    umschalter("anzeigen", "Kopplung (Federn) an", "kopplung").onclick = function () {
+      S.kopplung = !S.kopplung; this.classList.toggle("aktiv", S.kopplung);
+      this.textContent = S.kopplung ? "Kopplung (Federn) an" : "Kopplung (Federn) aus"; neuStart(); };
+    umschalter("anzeigen", "Begriffe zeigen", "begriffe");
+    schritte = schrittmodus([
+      { text: "Der <b>Erreger</b> (links) lenkt das erste Teilchen einmal nach oben aus und wieder zurück.",
+        vorbereiten: () => { S.modus = "puls"; S.kopplung = true; neuStart(); lauf.einzelschritt(0.5); } },
+      { text: "Über die Federn (<b>Kopplung</b>) zieht jedes Teilchen seinen Nachbarn mit – aber immer etwas <b>später</b>. So wandert die Störung nach rechts.",
+        vorbereiten: () => { neuStart(); lauf.einzelschritt(1.0); } },
+      { text: "Jetzt erreicht die Störung die <b style='color:#c62828'>rote Kugel</b>. Sie bewegt sich nur <b>nach oben und wieder zurück</b>.",
+        vorbereiten: () => { neuStart(); lauf.einzelschritt(1.5); } },
+      { text: "Die rote Kugel ist wieder in Ruhe – an ihrem alten Platz. Der Wellenberg ist weitergewandert: <b>Energie wird transportiert, aber keine Materie.</b>",
+        vorbereiten: () => { neuStart(); lauf.einzelschritt(3.5); } },
+    ]);
+  } else if (i === 2) {
+    Object.assign(P, { f: 0.5, c: 1.5, A: 0.4 }); Object.assign(S, { modus: "dauer", kopplung: true });
+    $("reglerTitel").textContent = "Wellentyp";
+    gruppe("knoepfe", [["quer", "Querwelle"], ["laengs", "Längswelle"], ["wasser", "Wasserwelle"],
+                       ["kreis", "Kreiswelle (von oben)"], ["eben", "Ebene Welle (von oben)"]], S.typ,
+           w => { S.typ = w; neuStart(); lauf.start(); });
+    umschalter("anzeigen", "Begriffe zeigen", "begriffe");
+  } else if (i === 3) {
+    Object.assign(P, { f: 0.5, c: 2, A: 0.4 }); Object.assign(S, { modus: "dauer", kopplung: true, zeigLambda: false, zeigA: false, zeigFront: true });
+    $("reglerTitel").textContent = "Erreger und Wellenträger";
+    R.f = regler($("regler"), { id: "f", name: "Frequenz des Erregers f", min: 0.25, max: 2, schritt: 0.25, wert: P.f, einheit: "Hz",
+                               beiAenderung: v => { P.f = v; neuStart(); } });
+    R.c = regler($("regler"), { id: "c", name: "Ausbreitungsgeschwindigkeit c (Seil)", min: 0.5, max: 3, schritt: 0.5, wert: P.c, einheit: "m/s",
+                               beiAenderung: v => { P.c = v; neuStart(); } });
+    R.A = regler($("regler"), { id: "A", name: "Amplitude A", min: 0.1, max: 0.5, schritt: 0.1, wert: P.A, einheit: "m",
+                               beiAenderung: v => { P.A = v; } });
+    R.btnL = umschalter("anzeigen", "λ einzeichnen", "zeigLambda");
+    umschalter("anzeigen", "A einzeichnen", "zeigA");
+    umschalter("anzeigen", "Wellenfront", "zeigFront");
+    umschalter("anzeigen", "Begriffe zeigen", "begriffe");
+    schritte = schrittmodus([
+      { text: "Der Erreger beginnt zu schwingen. Die <b style='color:var(--ausbreitung)'>Front</b> der Welle startet bei x = 0.",
+        vorbereiten: () => { setze(0.5, 2); S.zeigLambda = false; R.btnL.classList.remove("aktiv"); neuStart(); lauf.einzelschritt(0.02); } },
+      { text: "Nach einer <b>halben</b> Schwingungsdauer (T/2 = 1 s) ist ein Wellenberg entstanden. Die Front ist c · T/2 = 1 m weit gekommen.",
+        vorbereiten: () => { neuStart(); lauf.einzelschritt(1); } },
+      { text: "Nach genau <b>einer</b> Schwingungsdauer T = 2 s ist der Erreger wieder in der Ruhelage. Die Front ist die Strecke c · T = 2 m/s · 2 s = 4 m gewandert. Genau ein Berg und ein Tal passen hinein: Das ist die <b style='color:var(--mass)'>Wellenlänge λ</b>.",
+        vorbereiten: () => { lambdaAn(); neuStart(); lauf.einzelschritt(2); } },
+      { text: "Also gilt: <b>λ = c · T</b> und wegen T = 1/f: <b style='font-size:1.15em'>λ = c / f</b>. Prüfe es mit „λ einzeichnen“!",
+        vorbereiten: () => { lambdaAn(); neuStart(); lauf.einzelschritt(3); } },
+    ]);
+  }
+  $("infoText").innerHTML = INFO[i];
+  neuStart(); if (i === 2) lauf.start();
+}
+function lambdaAn() { S.zeigLambda = true; R.btnL && R.btnL.classList.add("aktiv"); }
+function setze(f, c) { P.f = f; P.c = c; if (R.f) { R.f.setzen(f); R.c.setzen(c); } }
+
+const INFO = {
+  1: `<p>Eine mechanische Welle braucht einen <b>Träger</b> aus schwingungsfähigen Teilchen, die miteinander <b>gekoppelt</b> sind (Kugel-Feder-Modell).
+      Der <b>Erreger</b> lenkt das erste Teilchen aus; wegen ihrer Trägheit folgen die Nachbarn zeitlich verzögert. So breitet sich die Störung mit der
+      Ausbreitungsgeschwindigkeit <i>c</i> aus. Dabei wird Energie transportiert, aber keine Materie.</p>`,
+  2: `<p><b>Querwelle (Transversalwelle):</b> Die Teilchen schwingen senkrecht zur Ausbreitungsrichtung – es entstehen Wellenberge und Wellentäler.
+      <b>Längswelle (Longitudinalwelle):</b> Die Teilchen schwingen parallel zur Ausbreitungsrichtung – es entstehen Verdichtungen und Verdünnungen (z. B. Schall).
+      <b>Wasserwelle:</b> Die Teilchen bewegen sich auf Kreisbahnen, in der Tiefe immer weniger (das langsame Mitwandern wird hier nicht gezeigt).</p>
+      <p>Von oben gesehen: Ein Tropfen erzeugt eine <b>Kreiswelle</b>, ein Lineal eine <b>ebene Welle</b>. Linien gleicher Phase heißen <b>Wellenfronten</b>,
+      die Pfeile senkrecht dazu <b>Wellenstrahlen</b> – sie zeigen die Ausbreitungsrichtung.</p>`,
+  3: `<p>Die Welle ist harmonisch und ungedämpft: <i>y</i>(<i>x</i>, <i>t</i>) = <i>A</i> · sin(2π · <i>f</i> · (<i>t</i> − <i>x</i>/<i>c</i>)).
+      <i>A</i> und <i>f</i> legt der <b>Erreger</b> fest, <i>c</i> legt der <b>Träger</b> (das Seil) fest. Die Wellenlänge ergibt sich daraus:
+      <i>λ</i> = <i>c</i> · <i>T</i> = <i>c</i> / <i>f</i>.</p><p class="klein">Das Diagramm zeigt die Schwingung des roten Teilchens bei x = 1,5 m (t-y-Diagramm),
+      die Szene zeigt eine Momentaufnahme der ganzen Welle (x-y-Bild).</p>`,
+  4: `<p>Zufallsaufgaben zu <i>λ</i> = <i>c</i> / <i>f</i>, <i>c</i> = <i>λ</i> · <i>f</i>, <i>f</i> = <i>c</i> / <i>λ</i> und <i>f</i> = 1/<i>T</i>.
+      Ergebnisse werden mit 2 % Toleranz geprüft.</p>`,
+};
+
+/* ---------- Rechentrainer (Station 4) ---------- */
+const zuf = a => a[Math.floor(Math.random() * a.length)];
+const zahl = (x, st) => fmt(x, st ?? (Math.abs(x - Math.round(x)) < 1e-9 ? 0 : Math.abs(x * 10 - Math.round(x * 10)) < 1e-9 ? 1 : 2));
+let niveau = 1, aufgabe = null, nr = 0, richtig = 0, versucht = false;
+const VORLAGEN = {
+  1: [
+    () => { const c = zuf([1.5, 2, 3, 4, 6]), f = zuf([0.5, 1, 2, 3]); return { text: `Eine Seilwelle breitet sich mit <i>c</i> = ${zahl(c)} m/s aus. Der Erreger schwingt mit <i>f</i> = ${zahl(f)} Hz. Berechne die Wellenlänge.`,
+      g: "λ", e: "m", w: c / f, tipp: "λ = c / f", weg: [`Gegeben: c = ${zahl(c)} m/s; f = ${zahl(f)} Hz`, "Gesucht: λ", "λ = c / f", `λ = ${zahl(c)} m/s : ${zahl(f)} Hz`, `λ = ${zahl(c / f)} m`] }; },
+    () => { const l = zuf([0.5, 1, 1.5, 2, 4]), f = zuf([2, 3, 4, 5]); return { text: `Eine Welle auf einer Slinky-Feder hat die Wellenlänge <i>λ</i> = ${zahl(l)} m und die Frequenz <i>f</i> = ${zahl(f)} Hz. Berechne die Ausbreitungsgeschwindigkeit.`,
+      g: "c", e: "m/s", w: l * f, tipp: "c = λ · f", weg: [`Gegeben: λ = ${zahl(l)} m; f = ${zahl(f)} Hz`, "Gesucht: c", "c = λ · f", `c = ${zahl(l)} m · ${zahl(f)} Hz`, `c = ${zahl(l * f)} m/s`] }; },
+    () => { const T0 = zuf([0.2, 0.25, 0.5, 2, 4, 5]); return { text: `Ein Teilchen einer Welle braucht für eine volle Schwingung <i>T</i> = ${zahl(T0)} s. Berechne die Frequenz.`,
+      g: "f", e: "Hz", w: 1 / T0, tipp: "f = 1 / T", weg: [`Gegeben: T = ${zahl(T0)} s`, "Gesucht: f", "f = 1 / T", `f = 1 : ${zahl(T0)} s`, `f = ${zahl(1 / T0)} Hz`] }; },
+  ],
+  2: [
+    () => { const c = zuf([1, 2, 3, 6]), l = zuf([0.5, 1.5, 2, 3]); return { text: `Wasserwellen in einem Becken laufen mit <i>c</i> = ${zahl(c)} m/s. Der Abstand zweier Wellenberge beträgt ${zahl(l)} m. Berechne die Frequenz der Welle.`,
+      g: "f", e: "Hz", w: c / l, tipp: "Der Abstand zweier Wellenberge ist λ. Stelle c = λ · f nach f um: f = c / λ", weg: [`Gegeben: c = ${zahl(c)} m/s; λ = ${zahl(l)} m`, "Gesucht: f", "c = λ · f   | : λ", "f = c / λ", `f = ${zahl(c)} m/s : ${zahl(l)} m`, `f = ${zahl(c / l)} Hz`] }; },
+    () => { const f = zuf([170, 340, 680, 850]); return { text: `Schall breitet sich in Luft mit <i>c</i> = 340 m/s aus. Ein Lautsprecher schwingt mit <i>f</i> = ${zahl(f)} Hz. Berechne die Wellenlänge des Schalls.`,
+      g: "λ", e: "m", w: 340 / f, tipp: "λ = c / f", weg: ["Gegeben: c = 340 m/s; f = " + zahl(f) + " Hz", "Gesucht: λ", "λ = c / f", `λ = 340 m/s : ${zahl(f)} Hz`, `λ = ${zahl(340 / f)} m`] }; },
+    () => { const l = zuf([2, 3, 4, 6]), T0 = zuf([0.5, 1, 2]); return { text: `Bei einer Seilwelle beträgt die Wellenlänge ${zahl(l)} m. Jedes Teilchen braucht für eine Schwingung <i>T</i> = ${zahl(T0)} s. Berechne die Ausbreitungsgeschwindigkeit.`,
+      g: "c", e: "m/s", w: l / T0, tipp: "λ = c · T  →  c = λ / T", weg: [`Gegeben: λ = ${zahl(l)} m; T = ${zahl(T0)} s`, "Gesucht: c", "λ = c · T   | : T", "c = λ / T", `c = ${zahl(l)} m : ${zahl(T0)} s`, `c = ${zahl(l / T0)} m/s`] }; },
+  ],
+  3: [
+    () => { const N = zuf([10, 12, 15, 20, 30]), t = zuf([60]), l = zuf([3, 6, 12]); const f = N / t; return { text: `Am See zählst du in einer Minute ${N} Wellenberge, die an dir vorbeilaufen. Der Abstand zweier Wellenberge beträgt etwa ${zahl(l)} m. Berechne die Ausbreitungsgeschwindigkeit.`,
+      g: "c", e: "m/s", w: l * f, tipp: "Erst die Frequenz: f = Anzahl : Zeit (1 min = 60 s). Dann c = λ · f", weg: [`Gegeben: N = ${N} in t = 60 s; λ = ${zahl(l)} m`, "Gesucht: c", `f = N / t = ${N} : 60 s = ${zahl(f, 3)} Hz`, "c = λ · f", `c = ${zahl(l)} m · ${zahl(f, 3)} Hz`, `c = ${zahl(l * f)} m/s`] }; },
+    () => { const s = zuf([20, 30, 40, 60]), t = zuf([10, 20, 40]), f = zuf([0.25, 0.5, 1]); const c = s / t; return { text: `Ein Wellenball im Schwimmbad schwingt mit <i>f</i> = ${zahl(f)} Hz. Die erste Wellenfront braucht ${t} s bis zum ${s} m entfernten Beckenrand. Berechne die Wellenlänge.`,
+      g: "λ", e: "m", w: c / f, tipp: "Erst die Ausbreitungsgeschwindigkeit: c = s / t. Dann λ = c / f", weg: [`Gegeben: s = ${s} m; t = ${t} s; f = ${zahl(f)} Hz`, "Gesucht: λ", `c = s / t = ${s} m : ${t} s = ${zahl(c)} m/s`, "λ = c / f", `λ = ${zahl(c)} m/s : ${zahl(f)} Hz`, `λ = ${zahl(c / f)} m`] }; },
+    () => { const N = zuf([10, 15, 20]), t = zuf([8, 10, 12]), l = 14; const f = N / t; return { text: `An einem Bahnübergang fahren ${N} Güterwagen in ${t} s vorbei. Jeder Wagen ist ${l} m lang (das ist die „Wellenlänge“). Berechne die Geschwindigkeit des Zuges in m/s.`,
+      g: "c", e: "m/s", w: l * f, tipp: "Frequenz: f = Anzahl : Zeit. Dann c = λ · f", weg: [`Gegeben: N = ${N}; t = ${t} s; λ = ${l} m`, "Gesucht: c", `f = N / t = ${N} : ${t} s = ${zahl(f, 3)} Hz`, "c = λ · f", `c = ${l} m · ${zahl(f, 3)} Hz`, `c = ${zahl(l * f, 1)} m/s`] }; },
+  ],
+  4: [
+    () => { const f = zuf([300, 500, 750]); return { text: `Schall breitet sich in Wasser mit <i>c</i> = 1,5 km/s aus. Ein Lautsprecher unter Wasser schwingt mit <i>f</i> = ${f} Hz. Berechne die Wellenlänge in m.`,
+      g: "λ", e: "m", w: 1500 / f, tipp: "Erst umrechnen: 1,5 km/s = 1500 m/s (kilo = 1000). Dann λ = c / f", weg: [`Gegeben: c = 1,5 km/s = 1500 m/s; f = ${f} Hz`, "Gesucht: λ", "λ = c / f", `λ = 1500 m/s : ${f} Hz`, `λ = ${zahl(1500 / f)} m`] }; },
+    () => { const f = zuf([2.5, 2.6, 3]), l = zuf([1, 2]); return { text: `Ein langer Metallstab wird mit <i>f</i> = ${zahl(f)} kHz angeregt. Im Stab entsteht eine Welle mit <i>λ</i> = ${zahl(l)} m. Berechne die Ausbreitungsgeschwindigkeit in m/s.`,
+      g: "c", e: "m/s", w: f * 1000 * l, tipp: "kHz → Hz: mal 1000. Dann c = λ · f", weg: [`Gegeben: f = ${zahl(f)} kHz = ${zahl(f * 1000)} Hz; λ = ${zahl(l)} m`, "Gesucht: c", "c = λ · f", `c = ${zahl(l)} m · ${zahl(f * 1000)} Hz`, `c = ${zahl(f * 1000 * l)} m/s`] }; },
+    () => { const f = zuf([20, 40, 50]); return { text: `Eine Fledermaus sendet Ultraschall mit <i>f</i> = ${f} kHz aus (<i>c</i> = 340 m/s). Berechne die Wellenlänge in <b>mm</b>.`,
+      g: "λ", e: "mm", w: 340 / (f * 1000) * 1000, tipp: "f = " + f + " kHz = " + (f * 1000) + " Hz. λ = c / f ergibt Meter; 1 m = 1000 mm", weg: [`Gegeben: c = 340 m/s; f = ${f} kHz = ${zahl(f * 1000)} Hz`, "Gesucht: λ", "λ = c / f", `λ = 340 m/s : ${zahl(f * 1000)} Hz = ${zahl(340 / (f * 1000), 4)} m`, `λ = ${zahl(340 / f)} mm`] }; },
+    () => { const T0 = zuf([200, 250, 500]), l = zuf([40, 50, 80]); return { text: `Auf einer Slinky-Feder hat die Welle die Wellenlänge <i>λ</i> = ${l} cm. Jede Windung braucht für eine Schwingung <i>T</i> = ${T0} ms. Berechne die Ausbreitungsgeschwindigkeit in m/s.`,
+      g: "c", e: "m/s", w: (l / 100) / (T0 / 1000), tipp: "Erst in m und s umrechnen: centi = 1/100, milli = 1/1000. Dann c = λ / T", weg: [`Gegeben: λ = ${l} cm = ${zahl(l / 100)} m; T = ${T0} ms = ${zahl(T0 / 1000)} s`, "Gesucht: c", "c = λ / T", `c = ${zahl(l / 100)} m : ${zahl(T0 / 1000)} s`, `c = ${zahl((l / 100) / (T0 / 1000))} m/s`] }; },
+    () => { const T0 = zuf([0.5, 1, 2]), c = zuf([4, 6, 8]); return { text: `Eine Erdbebenwelle breitet sich mit <i>c</i> = ${c} km/s aus. Ein Teilchen im Boden schwingt mit <i>T</i> = ${zahl(T0)} s. Berechne die Wellenlänge in <b>km</b>.`,
+      g: "λ", e: "km", w: c * T0, tipp: "λ = c · T. Wenn c in km/s und T in s steht, kommt λ direkt in km heraus.", weg: [`Gegeben: c = ${c} km/s; T = ${zahl(T0)} s`, "Gesucht: λ", "λ = c · T", `λ = ${c} km/s · ${zahl(T0)} s`, `λ = ${zahl(c * T0)} km`] }; },
+    () => { const v = zuf([36, 54, 72]); return { text: `Ein Güterzug fährt mit ${v} km/h. Rechne die Geschwindigkeit in m/s um.`,
+      g: "v", e: "m/s", w: v / 3.6, tipp: "km/h → m/s: durch 3,6 teilen (1 km = 1000 m, 1 h = 3600 s)", weg: [`${v} km/h = ${v} · 1000 m : 3600 s`, `= ${v} : 3,6 m/s`, `= ${zahl(v / 3.6)} m/s`] }; },
+  ],
+
+};
+function neueAufgabe() {
+  aufgabe = zuf(VORLAGEN[niveau])(); nr++; versucht = false;
+  $("aufgabeNr").textContent = `Aufgabe ${nr} · ${niveau === 4 ? "Vorsätze" : "Stufe " + niveau}`;
+  $("aufgabeText").innerHTML = aufgabe.text;
+  $("gesuchtName").innerHTML = `<i>${aufgabe.g}</i>`; $("gesuchtEinheit").textContent = aufgabe.e;
+  $("antwort").value = ""; $("rueckmeldung").className = ""; $("tippBox").style.display = "none"; $("wegBox").style.display = "none";
+  $("tippBox").innerHTML = `<b>Tipp:</b> <span class="formel">${aufgabe.tipp}</span>`;
+  $("wegBox").innerHTML = aufgabe.weg.map(z => `<div>${z}</div>`).join("");
+}
+function pruefen() {
+  const v = parseFloat($("antwort").value.replace(/\s/g, "").replace(",", "."));
+  const rm = $("rueckmeldung");
+  if (!isFinite(v)) { rm.className = "falsch"; rm.innerHTML = "Bitte eine Zahl eingeben, z. B. 1,5"; return; }
+  if (Math.abs(v - aufgabe.w) <= 0.02 * Math.abs(aufgabe.w) + 1e-9) {
+    rm.className = "richtig"; rm.innerHTML = `<b>Richtig!</b> ${aufgabe.g} = ${zahl(aufgabe.w)} ${aufgabe.e}`;
+    if (!versucht) richtig++; versucht = true;
+  } else {
+    rm.className = "falsch";
+    const vorsatz = [1000, 100, 0.001, 0.01, 3.6, 1 / 3.6].some(k => Math.abs(v - aufgabe.w * k) <= 0.02 * Math.abs(aufgabe.w * k));
+    rm.innerHTML = vorsatz ? "<b>Fast!</b> Die Ziffern stimmen, aber die Einheit nicht. Prüfe die Umrechnung der Vorsätze (kilo = 1000, centi = 1/100, milli = 1/1000)." : "<b>Noch nicht.</b> Prüfe die Formel und rechne noch einmal. Ein Tipp hilft dir weiter.";
+    versucht = true;
+  }
+  $("stand").textContent = `Beim ersten Versuch richtig: ${richtig} von ${nr}`;
+}
+gruppe("niveau", [[1, "Stufe 1"], [2, "Stufe 2"], [3, "Stufe 3"], [4, "Vorsätze (k, c, m)"]], 1, w => { niveau = w; neueAufgabe(); });
+$("btnPruefen").onclick = pruefen;
+$("antwort").addEventListener("keydown", e => { if (e.key === "Enter") pruefen(); });
+$("btnTipp").onclick = () => { $("tippBox").style.display = "block"; versucht = true; };
+$("btnWeg").onclick = () => { $("wegBox").style.display = "block"; versucht = true; };
+$("btnNeu").onclick = neueAufgabe;
+
+/* ---------- Start ---------- */
+const lauf = new Schleife({ dt: 0.002, schritt: physikSchritt,
+                            bild: () => { if (S.station !== 4) { szeneZeichnen(); diagramm.zeichnen(); messwerteZeigen(); } } });
+bedienungEinrichten(lauf, { reset: () => { schritte.aus(); neuStart(); }, einzel: () => lauf.einzelschritt(0.1) });
+$("btnSchrittmodus").onclick = () => schritte.aktiv ? schritte.aus() : schritte.an();
+$("btnPNG").onclick = () => alsPNG("welle.png", [$("szene"), $("diagramm")]);
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT") return;
+  if (["1", "2", "3", "4"].includes(e.key)) stationWaehlen(+e.key);
+});
+stationWaehlen(1);
+neueAufgabe(); nr = 1;
+</script>
+</body>
+</html>

@@ -1,0 +1,1067 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wellenwanne – Simulation</title>
+<!--
+  Wellenwanne für den Q1-Physikkurs (eine Datei, offline, keine externen Einbindungen).
+  Aufbau nach Sergeis Simulationsvorlage: CSS · HTML · BAUKASTEN (unverändert) · MODELL.
+  Modell: zweidimensionale Wellengleichung  ∂²y/∂t² = c²·Δy − γ·∂y/∂t  auf einem Gitter
+  (300 × 200 Zellen für 60 cm × 40 cm), Leapfrog-Verfahren mit festem Zeitschritt 3 ms.
+-->
+<style>
+  :root {
+    --hg: #ffffff; --flaeche: #f4f6f9; --rand: #d5dbe3; --text: #1b2430; --text2: #5a6675;
+    --akzent: #1f5c99;
+    --e-pot: #1f77b4; --e-kin: #d95f02; --e-th: #7b3294; --e-ges: #2b2b2b;
+    --kurve1: #1f5c99; --kurve2: #c62828; --kurve3: #2e7d32;
+    --schrift: system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--flaeche); color: var(--text); font-family: var(--schrift);
+         font-size: 1rem; line-height: 1.4; }
+  body.gross { font-size: 1.25rem; }
+  header { display: flex; align-items: center; gap: .8em; padding: .5em 1em;
+           background: var(--akzent); color: #fff; flex-wrap: wrap; }
+  header h1 { font-size: 1.3em; margin: 0; font-weight: 600; flex: 1 1 auto; }
+  header button { background: rgba(255,255,255,.15); color: #fff; border-color: rgba(255,255,255,.4); }
+  nav#stufen { display: flex; flex-wrap: wrap; gap: .5em; padding: .6em .8em 0; }
+  nav#stufen button { flex: 1 1 11em; text-align: left; line-height: 1.2; }
+  nav#stufen button small { display: block; color: var(--text2); font-size: .8em; }
+  nav#stufen button.aktiv { background: var(--akzent); color: #fff; outline: none; }
+  nav#stufen button.aktiv small { color: #dfe9f5; }
+  main { display: grid; gap: .8em; padding: .8em;
+         grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+         grid-template-areas: "szene steuerung" "szene diagramm" "regler regler" "info info"; }
+  @media (max-width: 900px) {
+    main { grid-template-columns: minmax(0, 1fr);
+           grid-template-areas: "szene" "steuerung" "regler" "diagramm" "info"; }
+  }
+  .karte { background: var(--hg); border: 1px solid var(--rand); border-radius: 10px; padding: .7em;
+           min-width: 0; }
+  .karte h2 { font-size: 1em; margin: 0 0 .4em; color: var(--text2); font-weight: 600; }
+  #szeneKarte { grid-area: szene; align-self: start; } #diagrammKarte { grid-area: diagramm; }
+  #steuerKarte { grid-area: steuerung; }
+  #reglerKarte { grid-area: regler; } #infoKarte { grid-area: info; }
+  canvas { display: block; width: 100%; touch-action: none; }
+  #szene { aspect-ratio: 3 / 2; max-height: 78vh; border-radius: 6px; }
+  #diagramm, #schnitt { height: 30vh; min-height: 200px; }
+  button { font: inherit; font-size: 1em; padding: .45em .9em; min-height: 2.6em; min-width: 2.6em;
+           border-radius: 8px; border: 1px solid var(--rand); background: var(--hg); color: var(--text);
+           cursor: pointer; }
+  button:hover { border-color: var(--akzent); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.haupt { background: var(--akzent); color: #fff; border-color: var(--akzent); font-weight: 600; }
+  button.aktiv { outline: 3px solid var(--akzent); outline-offset: 1px; }
+  .zeile { display: flex; flex-wrap: wrap; gap: .5em; align-items: center; }
+  .messwerte { display: grid; grid-template-columns: repeat(auto-fit, minmax(9em, 1fr)); gap: .3em .8em;
+               margin-top: .6em; font-variant-numeric: tabular-nums; }
+  .messwerte div { background: var(--flaeche); border-radius: 6px; padding: .25em .5em; }
+  .messwerte b { font-weight: 600; }
+  .regler { display: grid; grid-template-columns: repeat(auto-fit, minmax(16em, 1fr)); gap: .6em 1.4em; }
+  .regler label { display: block; font-weight: 600; }
+  .regler .wert { float: right; font-weight: 400; font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; height: 2.2em; accent-color: var(--akzent); }
+  .presets { margin-top: .7em; }
+  .gruppe { margin-top: .7em; }
+  .gruppe > b { display: block; margin-bottom: .3em; }
+  #auftrag { margin-top: .6em; padding: .6em .8em; border-left: 5px solid #2e7d32; background: #eef7ef;
+             border-radius: 6px; }
+  #auftrag h3 { margin: 0 0 .2em; font-size: 1.05em; }
+  #auftrag p { margin: .2em 0; }
+  #schritte { display: none; margin-top: .6em; padding: .6em .8em; border-left: 5px solid var(--akzent);
+              background: #eef4fb; border-radius: 6px; }
+  #schritte.an { display: block; }
+  #schrittText { font-size: 1.1em; margin: .2em 0 .5em; }
+  details summary { cursor: pointer; font-weight: 600; }
+  .klein { color: var(--text2); font-size: .85em; }
+  kbd { border: 1px solid var(--rand); border-bottom-width: 2px; border-radius: 4px; padding: 0 .3em;
+        font-size: .85em; background: var(--flaeche); }
+  #reflexZeile button.aus { background: #fff4e0; border-color: #d9a441; }
+  #reflexZeile button.an { background: #e6f2e7; border-color: #2e7d32; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="titel">Wellenwanne</h1>
+  <button id="btnGross" title="Große Schrift für den Beamer (G)">Beamer-Ansicht</button>
+  <button id="btnVoll" title="Vollbild (F)">Vollbild</button>
+</header>
+<nav id="stufen" aria-label="Stufen"></nav>
+
+<main>
+  <section class="karte" id="szeneKarte">
+    <h2 id="szeneTitel">Wellenwanne (von oben, 60 cm × 40 cm)</h2>
+    <canvas id="szene" aria-label="Wellenwanne von oben"></canvas>
+    <p class="klein" id="szeneTipp"></p>
+  </section>
+
+  <section class="karte" id="steuerKarte">
+    <div class="zeile">
+      <button id="btnStart" class="haupt" title="Start/Pause (Leertaste)">▶ Start</button>
+      <button id="btnSchritt" title="Einzelschritt (→)">Einzelschritt</button>
+      <button id="btnReset" title="Wasser beruhigen (R)">↺ Wasser beruhigen</button>
+      <button id="btnLangsam" title="Zeitlupe umschalten (L)">Zeitlupe: aus</button>
+    </div>
+    <div class="zeile" id="reflexZeile" style="margin-top:.6em">
+      <b>Reflexion:</b>
+      <button id="btnRand" title="Reflexion am Beckenrand ein- oder ausschalten">am Beckenrand: an</button>
+      <button id="btnWandRefl" title="Reflexion an Wänden und Hindernissen ein- oder ausschalten">an Wänden: an</button>
+    </div>
+    <div id="auftrag"></div>
+    <div class="messwerte" id="messwerte"></div>
+    <div id="schritte">
+      <div class="zeile" style="justify-content:space-between">
+        <b id="schrittNr"></b>
+        <span class="zeile"><button id="btnZurueck">◀ zurück</button><button id="btnWeiter" class="haupt">weiter ▶</button></span>
+      </div>
+      <div id="schrittText"></div>
+    </div>
+  </section>
+
+  <section class="karte" id="diagrammKarte">
+    <h2 id="diagrammTitel">Diagramm</h2>
+    <div class="zeile" id="diagrammWahl" style="margin-bottom:.4em">
+      <button id="btnDiaKorken" class="aktiv">Korken: <i>y</i> über <i>t</i></button>
+      <button id="btnDiaSchnitt">Momentbild entlang der Linie</button>
+    </div>
+    <canvas id="diagramm" aria-label="Auslenkung des Korkens über der Zeit"></canvas>
+    <canvas id="schnitt" aria-label="Momentbild der Wasseroberfläche entlang einer Linie" hidden></canvas>
+    <p class="klein" id="diagrammTipp">Der orange Korken kann in der Wanne verschoben werden.</p>
+  </section>
+
+  <section class="karte" id="reglerKarte">
+    <h2>Einstellungen</h2>
+    <div class="gruppe" id="gWerkzeug">
+      <b>Tippen in die Wanne …</b>
+      <div class="zeile" id="werkzeuge"></div>
+    </div>
+    <div class="gruppe" id="gHindernisse2">
+      <b>Hindernis in der Wanne</b>
+      <div class="zeile" id="hindernisse2"></div>
+    </div>
+    <div class="gruppe" id="gErreger">
+      <b>Erreger</b>
+      <div class="zeile" id="erregerWahl"></div>
+    </div>
+    <div class="gruppe" id="gHindernisse3">
+      <b>Hindernis vor dem Erreger</b>
+      <div class="zeile" id="hindernisse3"></div>
+    </div>
+    <div class="gruppe">
+      <div class="regler" id="regler"></div>
+    </div>
+    <div class="zeile presets">
+      <button id="btnStrahlen" title="Wellennormalen (Strahlen) und Lot einblenden">Strahlen einblenden</button>
+      <button id="btnSchrittmodus">Schritt für Schritt besprechen</button>
+      <button id="btnCSV" title="Messwerte des Korkens als Tabelle speichern">Messwerte speichern (CSV)</button>
+      <button id="btnPNG" title="Bild von Wanne und Diagramm speichern">Bild speichern (PNG)</button>
+    </div>
+  </section>
+
+  <section class="karte" id="infoKarte">
+    <details>
+      <summary>Was wird hier simuliert?</summary>
+      <div id="infoText"></div>
+    </details>
+    <p class="klein">Tastatur: <kbd>1</kbd>–<kbd>4</kbd> Stufe · <kbd>Leertaste</kbd> Start/Pause · <kbd>R</kbd> Wasser beruhigen ·
+      <kbd>→</kbd> Einzelschritt · <kbd>L</kbd> Zeitlupe · <kbd>G</kbd> Beamer-Ansicht · <kbd>F</kbd> Vollbild</p>
+  </section>
+</main>
+
+<script>
+"use strict";
+/* =====================================================================
+   BAUKASTEN – allgemein verwendbar, in neuen Simulationen unverändert lassen
+   ===================================================================== */
+const $ = id => document.getElementById(id);
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+/** Schriftgröße auf der Leinwand – wächst in der Beamer-Ansicht mit */
+const fs = px => Math.round(px * (document.body.classList.contains("gross") ? 1.3 : 1));
+
+/** Zahl deutsch formatieren: fmt(1.234, 2, "m") -> "1,23 m" */
+function fmt(x, stellen = 2, einheit = "") {
+  if (!isFinite(x)) return "–";
+  const s = x.toLocaleString("de-DE", { minimumFractionDigits: stellen, maximumFractionDigits: stellen });
+  return einheit ? s + " " + einheit : s;
+}
+
+/** Canvas mit scharfer Darstellung (HiDPI). Liefert {ctx, b, h} in CSS-Pixeln, passt sich an. */
+function leinwand(canvas, beiGroesse) {
+  const obj = { canvas, ctx: canvas.getContext("2d"), b: 0, h: 0 };
+  const anpassen = (melden = true) => {
+    const r = canvas.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    obj.b = Math.max(1, r.width); obj.h = Math.max(1, r.height);
+    canvas.width = Math.round(obj.b * dpr); canvas.height = Math.round(obj.h * dpr);
+    obj.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (melden && beiGroesse) beiGroesse();
+  };
+  anpassen(false);                       // Größe sofort setzen, Neuzeichnen erst bei Änderungen
+  new ResizeObserver(() => anpassen()).observe(canvas);
+  return obj;
+}
+
+/** Pfeil zeichnen (für Kräfte, Geschwindigkeiten, Maße) */
+function pfeil(ctx, x1, y1, x2, y2, farbe, breite = 3, spitze = 12) {
+  const w = Math.atan2(y2 - y1, x2 - x1), l = Math.hypot(x2 - x1, y2 - y1);
+  if (l < 1) return;
+  const s = Math.min(spitze, l * 0.6);
+  ctx.save(); ctx.strokeStyle = ctx.fillStyle = farbe; ctx.lineWidth = breite; ctx.lineCap = "round";
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2 - s * 0.7 * Math.cos(w), y2 - s * 0.7 * Math.sin(w)); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - s * Math.cos(w - 0.4), y2 - s * Math.sin(w - 0.4));
+  ctx.lineTo(x2 - s * Math.cos(w + 0.4), y2 - s * Math.sin(w + 0.4)); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+/** Text mit Hintergrund (gut lesbar über Linien) */
+function beschriftung(ctx, text, x, y, { farbe = "#1b2430", groesse = 15, ausrichtung = "center",
+                                        grundlinie = "middle", fett = false, hintergrund = true } = {}) {
+  ctx.save(); groesse = fs(groesse); ctx.font = `${fett ? "600 " : ""}${groesse}px ${css("--schrift")}`;
+  ctx.textAlign = ausrichtung; ctx.textBaseline = grundlinie;
+  const m = ctx.measureText(text), pad = 3;
+  let x0 = ausrichtung === "center" ? x - m.width / 2 : ausrichtung === "right" ? x - m.width : x;
+  if (hintergrund) { ctx.fillStyle = "rgba(255,255,255,.85)";
+    ctx.fillRect(x0 - pad, y - groesse * 0.6 - pad, m.width + 2 * pad, groesse * 1.2 + 2 * pad); }
+  ctx.fillStyle = farbe; ctx.fillText(text, x, y); ctx.restore();
+}
+
+/** "Schöne" Achsenteilung */
+function teilung(min, max, ziel = 6) {
+  const roh = (max - min) / ziel, p = Math.pow(10, Math.floor(Math.log10(roh)));
+  const f = roh / p, schritt = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * p;
+  const t = []; for (let v = Math.ceil(min / schritt) * schritt; v <= max + 1e-9 * schritt; v += schritt) t.push(v);
+  return { t, schritt, stellen: Math.max(0, -Math.floor(Math.log10(schritt) + 1e-9)) };
+}
+
+/**
+ * Live-Diagramm (Zeitreihen). Beispiel:
+ *   const d = new Diagramm(canvas, {xName:"t", xEinheit:"s", yName:"x", yEinheit:"m", fenster:10});
+ *   d.reihe("x", "Auslenkung", "#1f5c99");  d.punkt("x", t, x);  d.zeichnen();
+ * fenster = sichtbare Zeitspanne (mitlaufend); yMin/yMax fest oder automatisch.
+ */
+class Diagramm {
+  constructor(canvas, opt) {
+    this.o = Object.assign({ xName: "t", xEinheit: "s", yName: null, yEinheit: "", fenster: 10,
+                             yMin: null, yMax: null }, opt);
+    this.reihen = new Map(); this.lw = leinwand(canvas, () => this.zeichnen());
+  }
+  /** name = Text für den Knopf, achse = Achsenbeschriftung, z. B. "s in cm" */
+  reihe(id, name, farbe, sichtbar = true, achse = name) { this.reihen.set(id, { name, farbe, sichtbar, achse, d: [] }); }
+  punkt(id, x, y) { const r = this.reihen.get(id); r.d.push([x, y]); if (r.d.length > 20000) r.d.splice(0, 5000); }
+  leeren() { for (const r of this.reihen.values()) r.d = []; }
+  achsen(opt) { Object.assign(this.o, opt); }
+  zeichnen() {
+    const { ctx, b, h } = this.lw, o = this.o, R = { l: 62, r: 14, o: 18, u: 46 };
+    ctx.clearRect(0, 0, b, h);
+    const sicht = [...this.reihen.values()].filter(r => r.sichtbar);
+    let xMax = 0; for (const r of sicht) if (r.d.length) xMax = Math.max(xMax, r.d[r.d.length - 1][0]);
+    const x1 = Math.max(o.fenster, xMax), x0 = x1 - o.fenster;
+    let y0 = o.yMin, y1 = o.yMax;
+    if (y0 === null || y1 === null) {
+      let lo = Infinity, hi = -Infinity;
+      for (const r of sicht) for (const [x, y] of r.d) if (x >= x0) { lo = Math.min(lo, y); hi = Math.max(hi, y); }
+      if (!isFinite(lo)) { lo = -1; hi = 1; }
+      if (hi - lo < 1e-9) { lo -= 1; hi += 1; }
+      const rand = 0.1 * (hi - lo);
+      if (y0 === null) y0 = lo - rand; if (y1 === null) y1 = hi + rand;
+    }
+    const X = x => R.l + (x - x0) / (x1 - x0) * (b - R.l - R.r);
+    const Y = y => h - R.u - (y - y0) / (y1 - y0) * (h - R.o - R.u);
+    ctx.font = `${fs(13)}px ${css("--schrift")}`; ctx.lineWidth = 1;
+    const tx = teilung(x0, x1, Math.max(3, Math.floor(b / 90))), ty = teilung(y0, y1, Math.max(3, Math.floor(h / 55)));
+    ctx.strokeStyle = "#e3e7ec"; ctx.fillStyle = "#5a6675";
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    for (const v of tx.t) { ctx.beginPath(); ctx.moveTo(X(v), R.o); ctx.lineTo(X(v), h - R.u); ctx.stroke();
+                            ctx.fillText(fmt(v, tx.stellen), X(v), h - R.u + 5); }
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    for (const v of ty.t) { ctx.beginPath(); ctx.moveTo(R.l, Y(v)); ctx.lineTo(b - R.r, Y(v)); ctx.stroke();
+                            ctx.fillText(fmt(v, ty.stellen), R.l - 6, Y(v)); }
+    // Achsen (Nulllinie hervorheben)
+    ctx.strokeStyle = "#1b2430"; ctx.lineWidth = 1.5; ctx.beginPath();
+    const yNull = (y0 < 0 && y1 > 0) ? Y(0) : h - R.u;
+    ctx.moveTo(R.l, yNull); ctx.lineTo(b - R.r, yNull); ctx.moveTo(R.l, R.o); ctx.lineTo(R.l, h - R.u); ctx.stroke();
+    ctx.fillStyle = "#1b2430"; ctx.font = `600 ${fs(14)}px ${css("--schrift")}`;
+    ctx.textAlign = "right"; ctx.textBaseline = "bottom";
+    ctx.fillText(`${o.xName} in ${o.xEinheit}`, b - R.r, h - 4);
+    ctx.save(); ctx.translate(14, R.o); ctx.rotate(-Math.PI / 2); ctx.textAlign = "right"; ctx.textBaseline = "top";
+    const yText = o.yName ? (o.yEinheit ? `${o.yName} in ${o.yEinheit}` : o.yName) : sicht.map(r => r.achse).join(",  ");
+    ctx.fillText(yText, 0, 0); ctx.restore();
+    // Kurven
+    ctx.save(); ctx.beginPath(); ctx.rect(R.l, R.o, b - R.l - R.r, h - R.o - R.u); ctx.clip();
+    for (const r of sicht) {
+      ctx.strokeStyle = r.farbe; ctx.lineWidth = 2.5; ctx.beginPath(); let an = false;
+      for (const [x, y] of r.d) { if (x < x0 - 1e-9) continue; an ? ctx.lineTo(X(x), Y(y)) : ctx.moveTo(X(x), Y(y)); an = true; }
+      ctx.stroke();
+      if (r.d.length) { const [x, y] = r.d[r.d.length - 1]; ctx.fillStyle = r.farbe;
+                        ctx.beginPath(); ctx.arc(X(x), Y(y), 4.5, 0, 7); ctx.fill(); }
+    }
+    ctx.restore();
+  }
+  /** Knöpfe zum Ein-/Ausblenden der Kurven in ein Element einfügen */
+  auswahl(el) {
+    el.innerHTML = "";
+    for (const [id, r] of this.reihen) {
+      const k = document.createElement("button");
+      k.innerHTML = `<span style="color:${r.farbe}">━━</span> ${r.name}`;
+      k.classList.toggle("aktiv", r.sichtbar);
+      k.onclick = () => { r.sichtbar = !r.sichtbar; k.classList.toggle("aktiv", r.sichtbar); this.zeichnen(); };
+      el.appendChild(k);
+    }
+  }
+}
+
+/**
+ * Energiebalken. Beispiel:
+ *   const eb = new Balken(canvas, [{id:"pot", name:"E_Spann", farbe:css("--e-pot")}, ...], "J");
+ *   eb.zeichnen({pot: 0.2, kin: 0.1, ges: 0.3}, maxWert);
+ */
+class Balken {
+  constructor(canvas, arten, einheit = "J") { this.arten = arten; this.einheit = einheit;
+    this.lw = leinwand(canvas, () => this.letzte && this.zeichnen(...this.letzte)); }
+  zeichnen(werte, max) {
+    this.letzte = [werte, max];
+    const { ctx, b, h } = this.lw, n = this.arten.length, R = { l: 10, r: 10, o: 26, u: 30 };
+    ctx.clearRect(0, 0, b, h);
+    const bw = (b - R.l - R.r) / n, H = h - R.o - R.u, sk = max > 0 ? H / max : 0;
+    ctx.strokeStyle = "#1b2430"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(R.l, h - R.u); ctx.lineTo(b - R.r, h - R.u); ctx.stroke();
+    this.arten.forEach((a, i) => {
+      const v = Math.max(0, werte[a.id] || 0), x = R.l + i * bw + bw * 0.18, w = bw * 0.64;
+      ctx.fillStyle = a.farbe; ctx.fillRect(x, h - R.u - v * sk, w, v * sk);
+      ctx.font = `600 ${fs(14)}px ${css("--schrift")}`; ctx.fillStyle = "#1b2430"; ctx.textAlign = "center";
+      ctx.textBaseline = "top"; ctx.fillText(a.name, x + w / 2, h - R.u + 6);
+      ctx.textBaseline = "bottom"; ctx.font = `${fs(13)}px ${css("--schrift")}`;
+      ctx.fillText(fmt(werte[a.id] || 0, a.stellen ?? 2, this.einheit), x + w / 2, Math.max(R.o + 2, h - R.u - v * sk - 4));
+    });
+  }
+}
+
+/** Regler erzeugen. Liefert Objekt mit .wert; ruft beiAenderung(wert) auf. */
+function regler(container, { id, name, min, max, schritt, wert, einheit = "", stellen = 2, beiAenderung }) {
+  const box = document.createElement("div");
+  box.innerHTML = `<label for="r_${id}">${name} <span class="wert" id="w_${id}"></span></label>
+                   <input type="range" id="r_${id}" min="${min}" max="${max}" step="${schritt}" value="${wert}">`;
+  container.appendChild(box);
+  const inp = box.querySelector("input"), anz = box.querySelector(".wert");
+  const r = { get wert() { return parseFloat(inp.value); },
+              setzen(v) { inp.value = v; anz.textContent = fmt(parseFloat(inp.value), stellen, einheit); },
+              sperren(an) { inp.disabled = an; } };
+  r.setzen(wert);
+  inp.addEventListener("input", () => { anz.textContent = fmt(r.wert, stellen, einheit); beiAenderung && beiAenderung(r.wert); });
+  return r;
+}
+
+/** Datei aus der Seite heraus speichern (funktioniert offline) */
+function speichern(name, inhalt, typ) {
+  const a = document.createElement("a");
+  a.href = typeof inhalt === "string" ? URL.createObjectURL(new Blob([inhalt], { type: typ })) : inhalt;
+  a.download = name; document.body.appendChild(a); a.click(); a.remove();
+}
+
+/** Mehrere Canvas nebeneinander als ein PNG speichern */
+function alsPNG(name, canvasListe) {
+  const b = canvasListe.reduce((s, c) => s + c.width, 0), h = Math.max(...canvasListe.map(c => c.height));
+  const z = document.createElement("canvas"); z.width = b; z.height = h;
+  const ctx = z.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, b, h);
+  let x = 0; for (const c of canvasListe) { ctx.drawImage(c, x, 0); x += c.width; }
+  speichern(name, z.toDataURL("image/png"));
+}
+
+/**
+ * Simulationsschleife mit festem Zeitschritt (physikalisch sauber, unabhängig von der Bildrate).
+ *   const lauf = new Schleife({dt: 0.001, schritt: dt => {...}, bild: () => {...}});
+ *   lauf.start(); lauf.pause(); lauf.tempo = 0.2 (Zeitlupe)
+ */
+class Schleife {
+  constructor({ dt, schritt, bild, beiStatus }) {
+    Object.assign(this, { dt, schritt, bild, beiStatus, laeuft: false, tempo: 1, rest: 0, tAlt: 0 });
+    const tick = tJetzt => {
+      if (this.laeuft) {
+        let echt = Math.min(0.1, (tJetzt - this.tAlt) / 1000);   // nach Tab-Wechsel nicht springen
+        this.rest += echt * this.tempo;
+        let n = 0; while (this.rest >= this.dt && n < 20000) { this.schritt(this.dt); this.rest -= this.dt; n++; }
+      }
+      this.tAlt = tJetzt; this.bild(); requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+  start() { this.laeuft = true; this.beiStatus && this.beiStatus(true); }
+  pause() { this.laeuft = false; this.beiStatus && this.beiStatus(false); }
+  umschalten() { this.laeuft ? this.pause() : this.start(); }
+  einzelschritt(dauer) { this.pause(); const n = Math.round(dauer / this.dt); for (let i = 0; i < n; i++) this.schritt(this.dt); }
+}
+
+/**
+ * Schritt-für-Schritt-Modus zum Besprechen im Plenum.
+ *   schrittmodus([{text:"…", vorbereiten: () => {...}}, ...])
+ */
+function schrittmodus(schritte) {
+  let i = 0; const box = $("schritte");
+  const zeigen = () => { $("schrittNr").textContent = `Schritt ${i + 1} von ${schritte.length}`;
+    $("schrittText").innerHTML = schritte[i].text; schritte[i].vorbereiten && schritte[i].vorbereiten();
+    $("btnZurueck").disabled = i === 0; $("btnWeiter").disabled = i === schritte.length - 1; };
+  $("btnZurueck").onclick = () => { if (i > 0) { i--; zeigen(); } };
+  $("btnWeiter").onclick = () => { if (i < schritte.length - 1) { i++; zeigen(); } };
+  return { an() { box.classList.add("an"); i = 0; zeigen(); }, aus() { box.classList.remove("an"); },
+           get aktiv() { return box.classList.contains("an"); } };
+}
+
+/** Vollbild, Beamer-Ansicht, Tastatur */
+function bedienungEinrichten(lauf, { reset, einzel }) {
+  $("btnVoll").onclick = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+  $("btnGross").onclick = () => { document.body.classList.toggle("gross"); $("btnGross").classList.toggle("aktiv"); };
+  $("btnStart").onclick = () => lauf.umschalten();
+  $("btnReset").onclick = reset;
+  $("btnSchritt").onclick = einzel;
+  $("btnLangsam").onclick = () => { lauf.tempo = lauf.tempo === 1 ? 0.2 : 1;
+    $("btnLangsam").textContent = `Zeitlupe: ${lauf.tempo === 1 ? "aus" : "an (×0,2)"}`;
+    $("btnLangsam").classList.toggle("aktiv", lauf.tempo !== 1); };
+  lauf.beiStatus = an => { $("btnStart").textContent = an ? "❚❚ Pause" : "▶ Start"; };
+  document.addEventListener("keydown", e => {
+    if (e.target.tagName === "INPUT" && e.key !== " ") return;
+    const k = e.key.toLowerCase();
+    if (k === " ") { e.preventDefault(); lauf.umschalten(); }
+    else if (k === "r") reset(); else if (k === "arrowright") einzel();
+    else if (k === "l") $("btnLangsam").click(); else if (k === "g") $("btnGross").click();
+    else if (k === "f") $("btnVoll").click();
+  });
+}
+
+/* =====================================================================
+   MODELL – Wellenwanne
+   Wasseroberfläche y(x, z, t) als zweidimensionale Welle:
+       ∂²y/∂t² = c²·(∂²y/∂x² + ∂²y/∂z²) − γ·∂y/∂t
+   c = √(g·h) (Flachwasserwelle, h = Wassertiefe), γ = Dämpfung.
+   Gitter 300 × 200 Zellen (Zellbreite 2 mm), Leapfrog mit Δt = 3 ms
+   (Courant-Zahl c·Δt/Δx ≤ 0,6 < 0,71 → stabil).
+   Wände: Wasser endet dort, Randbedingung ∂y/∂n = 0 (Reflexion ohne Phasensprung,
+   wie bei echten Wasserwellen an einer Wand). „Strand“: Randzone mit starker Dämpfung.
+   ===================================================================== */
+const NX = 300, NY = 200, LX = 60, LY = 40, DX = LX / NX, DT = 0.003, GE = 981; // cm, s, cm/s²
+const W = NX + 2, H = NY + 2, N = W * H;        // mit einer Zelle Rahmen ringsum
+const H1 = 0.9;                                  // Wassertiefe im normalen Bereich: 9 mm
+const tempo = h => Math.sqrt(GE * h);            // c = √(g·h) in cm/s
+const XB = 24;                                   // Lage des Hindernisses in Stufe 3 (cm)
+const XE = 4;                                    // Lage des geraden Erregers (cm)
+const STRAND = 20, STRAND_MAX = 150;             // Breite (Zellen) und Stärke der Dämpfungszone
+
+const P = { stufe: 1, gamma: 0.4, f: 10, b: 2, g: 6, alpha: 30, h2: 0.5, kontrast: 1,
+            randRefl: true, wandRefl: true, strahlen: true, erreger: "gerade", hind3: "keins", hind2: "leer",
+            werkzeug: "tropfen", ex: { x: 10, y: 20 }, korken: { x: 42, y: 20 }, dia: "korken" };
+const Z = { t: 0, tq: 0, schritte: 0 };
+let u0 = new Float32Array(N), u1 = new Float32Array(N), u2 = new Float32Array(N);
+const M = new Float32Array(N);       // 1 = Wasser, 0 = Wand
+const K = new Float32Array(N);       // (c·Δt/Δx)²
+const AF = new Float32Array(N), BF = new Float32Array(N);  // Dämpfungsfaktoren
+const wandP = new Uint8Array(N);     // Wände aus der Auswahl
+const wandZ = new Uint8Array(N);     // selbst gezeichnete Wände
+const flach = new Uint8Array(N);     // Bereich 2 (andere Wassertiefe)
+let quellen = [];                    // [{p, w}] Zellen des Erregers
+const messreihe = [];
+
+const zelle = (x, y) => (1 + Math.min(NY - 1, Math.max(0, Math.floor(y / DX)))) * W + 1 + Math.min(NX - 1, Math.max(0, Math.floor(x / DX)));
+const mitteX = i => (i - 0.5) * DX, mitteY = j => (j - 0.5) * DX;
+const c1 = () => tempo(H1), c2 = () => tempo(P.h2);
+const lambda = c => c / P.f;
+const brechwinkel = () => {   // Brechungsgesetz sin α / sin β = c₁ / c₂ ; null = Totalreflexion
+  const s = Math.sin(P.alpha * Math.PI / 180) * c2() / c1();
+  return s > 1 ? null : Math.asin(s) * 180 / Math.PI;
+};
+
+/** Zellen in der Nähe einer Strecke markieren (Wand zeichnen) */
+function strecke(arr, x1, y1, x2, y2, r, wert = 1) {
+  const i0 = Math.max(1, Math.floor((Math.min(x1, x2) - r) / DX)), i1 = Math.min(NX, Math.ceil((Math.max(x1, x2) + r) / DX) + 1);
+  const j0 = Math.max(1, Math.floor((Math.min(y1, y2) - r) / DX)), j1 = Math.min(NY, Math.ceil((Math.max(y1, y2) + r) / DX) + 1);
+  const dx = x2 - x1, dy = y2 - y1, l2 = dx * dx + dy * dy || 1e-9;
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+    const x = mitteX(i), y = mitteY(j);
+    const s = Math.max(0, Math.min(1, ((x - x1) * dx + (y - y1) * dy) / l2));
+    if (Math.hypot(x - x1 - s * dx, y - y1 - s * dy) <= r) arr[j * W + i] = wert;
+  }
+}
+
+/** Öffnungen [von, bis] in einer senkrechten Wand bei x = XB */
+function spaltwand(oeffnungen) {
+  const r = 0.25; let y = -1;
+  for (const [a, b] of oeffnungen.sort((p, q) => p[0] - q[0])) { if (a > y) strecke(wandP, XB, y, XB, a, r); y = b; }
+  strecke(wandP, XB, y, XB, LY + 1, r);
+}
+
+/** Hindernisse aus der aktuellen Auswahl erzeugen */
+function hindernisseBauen() {
+  wandP.fill(0); flach.fill(0);
+  if (P.stufe === 2) {
+    if (P.hind2 === "gerade") strecke(wandP, 44, 6, 44, 34, 0.3);
+    else if (P.hind2 === "schraeg") strecke(wandP, 24, 6, 52, 34, 0.3);
+    else if (P.hind2 === "spiegel") {           // Parabel x = 54 − (y−20)²/(4F), Brennpunkt bei x = 54 − F
+      const F = 12; let xa = null, ya = null;
+      for (let y = 3; y <= 37.01; y += 0.5) { const x = 54 - (y - 20) ** 2 / (4 * F);
+        if (xa !== null) strecke(wandP, xa, ya, x, y, 0.3); xa = x; ya = y; }
+    }
+  } else if (P.stufe === 3) {
+    const m = LY / 2, b = P.b, g = P.g;
+    if (P.hind3 === "wand") spaltwand([]);
+    else if (P.hind3 === "klotz") strecke(wandP, XB, m - 3, XB, m + 3, 0.25);
+    else if (P.hind3 === "kante") strecke(wandP, XB, m, XB, LY + 1, 0.25);
+    else if (P.hind3 === "einfach") spaltwand([[m - b / 2, m + b / 2]]);
+    else if (P.hind3 === "doppel") spaltwand([[m - g / 2 - b / 2, m - g / 2 + b / 2], [m + g / 2 - b / 2, m + g / 2 + b / 2]]);
+    else if (P.hind3 === "dreifach") spaltwand([[m - g - b / 2, m - g + b / 2], [m - b / 2, m + b / 2], [m + g - b / 2, m + g + b / 2]]);
+  } else if (P.stufe === 4) {
+    const ca = Math.cos(P.alpha * Math.PI / 180), sa = Math.sin(P.alpha * Math.PI / 180);
+    for (let j = 1; j <= NY; j++) for (let i = 1; i <= NX; i++)
+      if ((mitteX(i) - 30) * ca + (mitteY(j) - 20) * sa > 0) flach[j * W + i] = 1;
+  }
+  aufbauen();
+}
+
+/** Abstand (in Zellen) jeder Zelle zur nächsten Wand im Becken – für „Reflexion an Wänden: aus“.
+    Vor der Wand liegt dann eine Dämpfungszone (wie ein Strand), die die Welle schluckt. */
+const WSTRAND = 12, abstFeld = new Float32Array(N);
+function wandAbstand() {
+  const D = abstFeld, gross = 1e6, d2 = Math.SQRT2;
+  // Stufe 3: Hindernis vor dem Erreger nur auf der Vorderseite dämpfen, damit Spalte offen bleiben
+  const nurVorne = P.stufe === 3;
+  for (let p = 0; p < N; p++) D[p] = wandZ[p] || (wandP[p] && !nurVorne) ? 0 : gross;
+  for (let j = 1; j < H - 1; j++) for (let i = 1; i < W - 1; i++) { const p = j * W + i;
+    D[p] = Math.min(D[p], D[p - 1] + 1, D[p - W] + 1, D[p - W - 1] + d2, D[p - W + 1] + d2); }
+  for (let j = H - 2; j >= 1; j--) for (let i = W - 2; i >= 1; i--) { const p = j * W + i;
+    D[p] = Math.min(D[p], D[p + 1] + 1, D[p + W] + 1, D[p + W + 1] + d2, D[p + W - 1] + d2); }
+  if (nurVorne) for (let j = 1; j < H - 1; j++) { let iw = -1;
+    for (let i = W - 2; i >= 1; i--) { const p = j * W + i;
+      if (wandP[p]) iw = i; else if (iw > 0) D[p] = Math.min(D[p], iw - i); } }
+  return D;
+}
+
+/** Koeffizienten je Zelle aus Wänden, Tiefe und Dämpfung berechnen */
+function aufbauen() {
+  const ka = (c1() * DT / DX) ** 2, kb = (c2() * DT / DX) ** 2;
+  const linksStrand = P.stufe >= 3 && quellenArt() === "gerade";
+  const abst = P.wandRefl ? null : wandAbstand();
+  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+    const p = j * W + i;
+    const rand = i === 0 || j === 0 || i === W - 1 || j === H - 1;
+    M[p] = rand || wandP[p] || wandZ[p] ? 0 : 1;
+    if (!M[p]) { u0[p] = u1[p] = u2[p] = 0; }
+    K[p] = flach[p] ? kb : ka;
+    let s = P.gamma;
+    if (abst && abst[p] < WSTRAND) s += STRAND_MAX * ((WSTRAND - abst[p]) / WSTRAND) ** 2;
+    if (!rand) {
+      const d = P.randRefl ? (linksStrand ? i - 1 : 1e9) : Math.min(i - 1, NX - i, j - 1, NY - j);
+      if (d < STRAND) s += STRAND_MAX * ((STRAND - d) / STRAND) ** 2;
+    }
+    const dd = s * DT / 2; AF[p] = 1 / (1 + dd); BF[p] = 1 - dd;
+  }
+  quellenBauen();
+}
+
+const quellenArt = () => P.stufe === 4 ? "gerade" : P.stufe === 3 ? P.erreger : "keiner";
+function erregerPunkte() {
+  const a = quellenArt();
+  if (a === "punkt") return [{ x: P.ex.x, y: P.ex.y }];
+  if (a === "zwei") return [{ x: P.ex.x, y: P.ex.y - P.g / 2 }, { x: P.ex.x, y: P.ex.y + P.g / 2 }];
+  return [];
+}
+function quellenBauen() {
+  quellen = []; const a = quellenArt();
+  if (a === "gerade") { const i = 1 + Math.floor(XE / DX);
+    for (let j = 1; j <= NY; j++) { const p = j * W + i; if (M[p]) quellen.push({ p, w: QL }); } }
+  for (const e of erregerPunkte()) {
+    const r = 0.35;
+    for (let j = 1; j <= NY; j++) for (let i = 1; i <= NX; i++) {
+      const p = j * W + i, d = Math.hypot(mitteX(i) - e.x, mitteY(j) - e.y);
+      if (d <= r && M[p]) quellen.push({ p, w: QP });
+    }
+  }
+}
+const QL = 0.2, QP = 0.3;   // Stärke der Erreger (so gewählt, dass die Amplitude etwa 1 mm beträgt)
+
+/** Ein Zeitschritt (Leapfrog) */
+function physikSchritt() {
+  const a = u0, b = u1, c = u2;
+  for (let j = 1; j <= NY; j++) {
+    let p = j * W + 1;
+    for (let i = 1; i <= NX; i++, p++) {
+      if (M[p] === 0) continue;
+      const uc = b[p];
+      const lap = M[p + 1] * (b[p + 1] - uc) + M[p - 1] * (b[p - 1] - uc) + M[p + W] * (b[p + W] - uc) + M[p - W] * (b[p - W] - uc);
+      c[p] = (2 * uc - BF[p] * a[p] + K[p] * lap) * AF[p];
+    }
+  }
+  if (quellen.length) {
+    const s = Math.sin(2 * Math.PI * P.f * Z.tq) * Math.min(1, Z.tq / 0.25);
+    for (const q of quellen) c[q.p] += q.w * s;
+  }
+  u0 = b; u1 = c; u2 = a;
+  Z.t += DT; Z.tq += DT; Z.schritte++;
+  if (Z.schritte % 2 === 0) aufzeichnen();
+}
+
+function aufzeichnen() {
+  const y = u1[zelle(P.korken.x, P.korken.y)];
+  diagramm.punkt("y", Z.t, y);
+  messreihe.push([Z.t, y]);
+  if (messreihe.length > 30000) messreihe.splice(0, 10000);
+}
+
+/** Tropfen: kleine Erhebung, die zur Kreiswelle zerfließt */
+function tropfen(x, y, hoehe = 12, r = 0.5) {
+  const ic = Math.floor(x / DX) + 1, jc = Math.floor(y / DX) + 1, n = Math.ceil(4 * r / DX);
+  for (let j = Math.max(1, jc - n); j <= Math.min(NY, jc + n); j++)
+    for (let i = Math.max(1, ic - n); i <= Math.min(NX, ic + n); i++) {
+      const p = j * W + i; if (!M[p]) continue;
+      const d2 = (mitteX(i) - x) ** 2 + (mitteY(j) - y) ** 2, z = hoehe * Math.exp(-d2 / (2 * r * r));
+      u0[p] += z; u1[p] += z;
+    }
+}
+
+/** Gerader Wellenzug, der nach rechts läuft (d'Alembert: y = f(x − c·t)) */
+function geradeWelle() {
+  const c = c1(), x0 = 6, form = x => 2.5 * Math.exp(-(((x - x0) / 2.4) ** 2)) * Math.cos(2 * Math.PI * (x - x0) / 3);
+  for (let j = 1; j <= NY; j++) for (let i = 1; i <= NX; i++) {
+    const p = j * W + i; if (!M[p]) continue; const x = mitteX(i);
+    u1[p] += form(x); u0[p] += form(x + c * DT);
+  }
+  if (!lauf.laeuft) lauf.start();
+}
+
+function ruhe() {
+  u0.fill(0); u1.fill(0); u2.fill(0);
+  Z.t = 0; Z.tq = 0; Z.schritte = 0; messreihe.length = 0; diagramm.leeren(); aufzeichnen();
+}
+function vorlauf(sek) { const n = Math.round(sek / DT); for (let k = 0; k < n; k++) physikSchritt(); }
+
+/* ---------- Szene zeichnen ---------- */
+const szene = leinwand($("szene"), () => szeneZeichnen());
+const bild = document.createElement("canvas"); bild.width = NX; bild.height = NY;
+const bctx = bild.getContext("2d"), bdaten = bctx.createImageData(NX, NY), pix = new Uint32Array(bdaten.data.buffer);
+const rgba = (r, g, b) => (255 << 24) | (b << 16) | (g << 8) | r;   // little endian
+function farbtabelle(tal, mitte, berg) {
+  const t = new Uint32Array(513);
+  for (let k = 0; k <= 512; k++) {
+    const v = k / 256 - 1, [a, b, s] = v < 0 ? [mitte, tal, -v] : [mitte, berg, v];
+    const m = i => Math.round(a[i] + (b[i] - a[i]) * s);
+    t[k] = rgba(m(0), m(1), m(2));
+  }
+  return t;
+}
+const LUT_NORMAL = farbtabelle([10, 42, 82], [64, 128, 184], [232, 245, 255]);
+const LUT_FLACH = farbtabelle([38, 74, 64], [128, 172, 150], [250, 246, 222]);
+const LUT_TIEF = farbtabelle([6, 22, 52], [36, 84, 140], [205, 226, 248]);
+const WANDFARBE = rgba(58, 64, 72), ZEICHENFARBE = rgba(110, 78, 50), STRANDFARBE = rgba(214, 178, 110);
+
+function szeneZeichnen() {
+  const { ctx, b, h } = szene;
+  const s = Math.min(b / LX, h / LY), ox = (b - LX * s) / 2, oy = (h - LY * s) / 2;
+  szene.m = { s, ox, oy };
+  const X = x => ox + x * s, Y = y => oy + y * s;
+  const lutB = P.h2 < H1 ? LUT_FLACH : LUT_TIEF, g = 1.2 * P.kontrast;
+  let q = 0;
+  for (let j = 1; j <= NY; j++) { let p = j * W + 1;
+    for (let i = 1; i <= NX; i++, p++, q++) {
+      if (!M[p]) { pix[q] = (wandP[p] || wandZ[p]) && !P.wandRefl ? STRANDFARBE : wandZ[p] ? ZEICHENFARBE : WANDFARBE; continue; }
+      const v = Math.tanh(u1[p] * g);
+      pix[q] = (flach[p] ? lutB : LUT_NORMAL)[(v * 256 + 256) | 0];
+    } }
+  bctx.putImageData(bdaten, 0, 0);
+  ctx.fillStyle = "#e9edf2"; ctx.fillRect(0, 0, b, h);
+  ctx.imageSmoothingEnabled = true; ctx.drawImage(bild, ox, oy, LX * s, LY * s);
+  // Strand-Zonen andeuten
+  if (!P.randRefl || (P.stufe >= 3 && quellenArt() === "gerade")) {
+    ctx.save(); ctx.strokeStyle = "rgba(230,200,140,.9)"; ctx.lineWidth = Math.max(3, s * 0.35);
+    ctx.beginPath();
+    if (!P.randRefl) ctx.rect(X(0), Y(0), LX * s, LY * s); else { ctx.moveTo(X(0), Y(0)); ctx.lineTo(X(0), Y(LY)); }
+    ctx.stroke(); ctx.restore();
+  }
+  // Grenze der Tiefenänderung
+  if (P.stufe === 4) {
+    const a = P.alpha * Math.PI / 180, tx = -Math.sin(a), ty = Math.cos(a), L = 40;
+    ctx.save(); ctx.beginPath(); ctx.rect(X(0), Y(0), LX * s, LY * s); ctx.clip();
+    ctx.setLineDash([10, 7]); ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(X(30 - L * tx), Y(20 - L * ty)); ctx.lineTo(X(30 + L * tx), Y(20 + L * ty)); ctx.stroke();
+    ctx.restore();
+    beschriftung(ctx, `Bereich 1: tief, h₁ = ${fmt(H1 * 10, 0, "mm")}`, X(6), Y(2.2), { ausrichtung: "left", groesse: 14, fett: true });
+    beschriftung(ctx, `Bereich 2: ${P.h2 < H1 ? "flacher" : P.h2 > H1 ? "tiefer" : "gleich tief"}, h₂ = ${fmt(P.h2 * 10, 0, "mm")}`,
+                 X(58), Y(34.5), { ausrichtung: "right", groesse: 14, fett: true });
+    if (P.strahlen) strahlenBrechung(ctx, X, Y, s);
+  }
+  if (P.stufe === 2 && P.hind2 === "schraeg" && P.strahlen) strahlenReflexion(ctx, X, Y, s);
+  if (P.stufe === 2 && P.hind2 === "spiegel") {
+    ctx.fillStyle = "#c62828"; ctx.beginPath(); ctx.arc(X(42), Y(20), 5, 0, 7); ctx.fill();
+    beschriftung(ctx, "Brennpunkt", X(42), Y(20) - 18, { groesse: 13, farbe: "#c62828" });
+  }
+  // Erreger
+  const art = quellenArt();
+  if (art === "gerade") {
+    ctx.fillStyle = "#2b2b2b"; ctx.fillRect(X(XE) - 4, Y(0.4), 8, LY * s - 0.8 * s);
+    beschriftung(ctx, "Erreger", X(XE) + 8, Y(LY / 2), { ausrichtung: "left", groesse: 13, fett: true });
+  }
+  for (const e of erregerPunkte()) {
+    ctx.fillStyle = "#2b2b2b"; ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(X(e.x), Y(e.y), Math.max(6, 0.45 * s), 0, 7); ctx.fill(); ctx.stroke();
+  }
+  if (art === "punkt" || art === "zwei") beschriftung(ctx, art === "zwei" ? "Erreger (2)" : "Erreger", X(P.ex.x), Y(P.ex.y + (art === "zwei" ? P.g / 2 : 0)) + 22, { groesse: 13, fett: true });
+  // Schnittlinie für das Momentbild
+  if (P.dia === "schnitt") {
+    ctx.save(); ctx.setLineDash([6, 6]); ctx.strokeStyle = "rgba(255,160,40,.95)"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(X(0), Y(P.korken.y)); ctx.lineTo(X(LX), Y(P.korken.y)); ctx.stroke(); ctx.restore();
+  }
+  // Korken
+  const ky = u1[zelle(P.korken.x, P.korken.y)], kr = Math.max(7, 0.55 * s) * (1 + 0.12 * Math.tanh(ky));
+  ctx.fillStyle = "#e08a1e"; ctx.strokeStyle = "#fff"; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.arc(X(P.korken.x), Y(P.korken.y), kr, 0, 7); ctx.fill(); ctx.stroke();
+  beschriftung(ctx, "Korken", X(P.korken.x), Y(P.korken.y) - kr - 12, { groesse: 13, farbe: "#8a4b00" });
+  // Maßstab
+  const mx = X(LX) - 5 * s - 12, my = Y(LY) - 14;
+  ctx.fillStyle = "#fff"; ctx.fillRect(mx, my - 3, 5 * s, 6);
+  beschriftung(ctx, "5 cm", mx + 2.5 * s, my - 16, { groesse: 13 });
+}
+
+function strahlenReflexion(ctx, X, Y, s) {
+  const px = 38, py = 20, n = [-Math.SQRT1_2, Math.SQRT1_2];
+  ctx.save(); ctx.setLineDash([6, 5]); ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(X(px - 9 * n[0]), Y(py - 9 * n[1])); ctx.lineTo(X(px + 9 * n[0]), Y(py + 9 * n[1])); ctx.stroke();
+  ctx.restore();
+  pfeil(ctx, X(px - 14), Y(py), X(px), Y(py), "#c62828", 3.5, 14);
+  pfeil(ctx, X(px), Y(py), X(px), Y(py + 13), "#c62828", 3.5, 14);
+  beschriftung(ctx, "Lot", X(px + 9 * n[0]) - 6, Y(py + 9 * n[1]) + 4, { groesse: 13, ausrichtung: "right" });
+  beschriftung(ctx, "45°", X(px - 3.2), Y(py + 1.7), { groesse: 13, fett: true });
+  beschriftung(ctx, "45°", X(px - 1.4), Y(py + 4.2), { groesse: 13, fett: true });
+}
+
+function strahlenBrechung(ctx, X, Y, s) {
+  const a = P.alpha * Math.PI / 180, n = [Math.cos(a), Math.sin(a)], px = 30, py = 20;
+  ctx.save(); ctx.setLineDash([6, 5]); ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(X(px - 10 * n[0]), Y(py - 10 * n[1])); ctx.lineTo(X(px + 12 * n[0]), Y(py + 12 * n[1])); ctx.stroke();
+  ctx.restore();
+  beschriftung(ctx, "Lot", X(px + 12 * n[0]), Y(py + 12 * n[1]) + 14, { groesse: 13 });
+  pfeil(ctx, X(px - 14), Y(py), X(px), Y(py), "#c62828", 3.5, 14);
+  beschriftung(ctx, `α = ${fmt(P.alpha, 0, "°")}`, X(px - 8), Y(py) - 16, { groesse: 14, farbe: "#c62828", fett: true });
+  const beta = brechwinkel();
+  if (beta === null) {   // Totalreflexion: Reflexionsrichtung
+    const d = [1, 0], dn = d[0] * n[0] + d[1] * n[1], r = [d[0] - 2 * dn * n[0], d[1] - 2 * dn * n[1]];
+    pfeil(ctx, X(px), Y(py), X(px + 13 * r[0]), Y(py + 13 * r[1]), "#c62828", 3.5, 14);
+    beschriftung(ctx, "Totalreflexion", X(px + 13 * r[0]), Y(py + 13 * r[1]) + 16, { groesse: 14, farbe: "#c62828", fett: true });
+    return;
+  }
+  const b = beta * Math.PI / 180;
+  let t = [1 - n[0] * n[0], -n[0] * n[1]]; const tl = Math.hypot(t[0], t[1]);
+  t = tl > 1e-6 ? [t[0] / tl, t[1] / tl] : [0, 0];
+  const d2 = [Math.cos(b) * n[0] + Math.sin(b) * t[0], Math.cos(b) * n[1] + Math.sin(b) * t[1]];
+  pfeil(ctx, X(px), Y(py), X(px + 14 * d2[0]), Y(py + 14 * d2[1]), "#c62828", 3.5, 14);
+  beschriftung(ctx, `β = ${fmt(beta, 0, "°")}`, X(px + 15 * d2[0]) + 8, Y(py + 15 * d2[1]) - 14, { groesse: 14, farbe: "#c62828", fett: true, ausrichtung: "left" });
+}
+
+/* ---------- Diagramme ---------- */
+const diagramm = new Diagramm($("diagramm"), { xName: "t", xEinheit: "s", yName: "y", yEinheit: "mm", fenster: 4, yMin: -1, yMax: 1 });
+diagramm.reihe("y", "Korken", "#e08a1e");
+const schnitt = new Diagramm($("schnitt"), { xName: "x", xEinheit: "cm", yName: "y", yEinheit: "mm", fenster: LX, yMin: -1, yMax: 1 });
+schnitt.reihe("y", "Momentbild", css("--kurve1"));
+
+function grenzeSymmetrisch(werte) {
+  let m = 0; for (const v of werte) m = Math.max(m, Math.abs(v));
+  m = Math.max(0.5, m * 1.15); const st = [0.5, 1, 1.5, 2, 3, 4, 5, 8, 10, 15, 20];
+  return st.find(v => v >= m) || m;
+}
+function diagrammeZeichnen() {
+  if (P.dia === "korken") {
+    const r = diagramm.reihen.get("y").d, x1 = r.length ? r[r.length - 1][0] : 0;
+    const g = grenzeSymmetrisch(r.filter(p => p[0] >= x1 - 4).map(p => p[1]));
+    diagramm.achsen({ yMin: -g, yMax: g }); diagramm.zeichnen();
+  } else {
+    schnitt.leeren(); const j = 1 + Math.floor(P.korken.y / DX), werte = [];
+    for (let i = 1; i <= NX; i++) { const p = j * W + i; if (M[p]) { schnitt.punkt("y", mitteX(i), u1[p]); werte.push(u1[p]); } }
+    const g = grenzeSymmetrisch(werte); schnitt.achsen({ yMin: -g, yMax: g }); schnitt.zeichnen();
+  }
+}
+function diagrammWahl(art) {
+  P.dia = art; $("diagramm").hidden = art !== "korken"; $("schnitt").hidden = art === "korken";
+  $("btnDiaKorken").classList.toggle("aktiv", art === "korken"); $("btnDiaSchnitt").classList.toggle("aktiv", art !== "korken");
+  $("diagrammTitel").textContent = art === "korken" ? "Diagramm: Bewegung des Korkens" : "Momentbild entlang der orangen Linie";
+  $("diagrammTipp").textContent = art === "korken" ? "Der orange Korken kann in der Wanne verschoben werden."
+    : "Die Linie verläuft durch den Korken – Korken verschieben, um die Linie zu verlegen.";
+}
+$("btnDiaKorken").onclick = () => diagrammWahl("korken");
+$("btnDiaSchnitt").onclick = () => diagrammWahl("schnitt");
+
+/* ---------- Messwerte ---------- */
+function messwerteZeigen() {
+  const ky = u1[zelle(P.korken.x, P.korken.y)];
+  let t = `<div><b>t</b> = ${fmt(Z.t, 2, "s")}</div><div><b>y</b><sub>Korken</sub> = ${fmt(ky, 2, "mm")}</div>`;
+  if (P.stufe < 4) t += `<div><b>c</b> = ${fmt(c1(), 0, "cm/s")}</div>`;
+  if (P.stufe === 3) t += `<div><b>f</b> = ${fmt(P.f, 1, "Hz")}</div><div><b>λ</b> = <i>c</i>/<i>f</i> = ${fmt(lambda(c1()), 1, "cm")}</div>`;
+  if (P.stufe === 4) {
+    const be = brechwinkel();
+    t += `<div><b>f</b> = ${fmt(P.f, 1, "Hz")}</div><div></div>
+          <div><b>c₁</b> = ${fmt(c1(), 0, "cm/s")}</div><div><b>c₂</b> = ${fmt(c2(), 0, "cm/s")}</div>
+          <div><b>λ₁</b> = ${fmt(lambda(c1()), 1, "cm")}</div><div><b>λ₂</b> = ${fmt(lambda(c2()), 1, "cm")}</div>
+          <div><b>α</b> = ${fmt(P.alpha, 0, "°")}</div><div><b>β</b> = ${be === null ? "Totalreflexion" : fmt(be, 0, "°")}</div>`;
+  }
+  $("messwerte").innerHTML = t;
+}
+
+/* ---------- Auswahlknöpfe ---------- */
+function knopfreihe(el, liste, holen, setzen) {
+  el.innerHTML = "";
+  for (const [wert, text] of liste) {
+    const k = document.createElement("button"); k.innerHTML = text; k.dataset.wert = wert;
+    k.onclick = () => { setzen(wert); markieren(); };
+    el.appendChild(k);
+  }
+  const markieren = () => { for (const k of el.children) if (k.dataset.wert) k.classList.toggle("aktiv", k.dataset.wert === holen()); };
+  markieren(); el.markieren = markieren;
+}
+knopfreihe($("werkzeuge"), [["tropfen", "💧 Tropfen"], ["zeichnen", "✏️ Wand zeichnen"], ["radieren", "🧽 Wand wegwischen"]],
+  () => P.werkzeug, w => { P.werkzeug = w; tippAktualisieren(); });
+{ const k = document.createElement("button"); k.textContent = "Gezeichnete Wände löschen";
+  k.onclick = () => { wandZ.fill(0); aufbauen(); }; $("werkzeuge").appendChild(k); }
+knopfreihe($("hindernisse2"), [["leer", "keins"], ["gerade", "gerade Wand"], ["schraeg", "schräge Wand"], ["spiegel", "Hohlspiegel"]],
+  () => P.hind2, w => { P.hind2 = w; hindernisseBauen(); sichtbarkeit(); });
+{ const k = document.createElement("button"); k.textContent = "〰 Gerade Welle losschicken"; k.className = "haupt";
+  k.onclick = geradeWelle; $("hindernisse2").appendChild(k); }
+knopfreihe($("erregerWahl"), [["punkt", "Punkterreger"], ["gerade", "gerader Erreger"], ["zwei", "zwei Punkterreger"]],
+  () => P.erreger, w => { P.erreger = w; Z.tq = 0; aufbauen(); sichtbarkeit(); });
+knopfreihe($("hindernisse3"), [["keins", "keins"], ["wand", "Wand"], ["klotz", "kleines Hindernis"], ["kante", "Kante"],
+  ["einfach", "Einfachspalt"], ["doppel", "Doppelspalt"], ["dreifach", "Dreifachspalt"]],
+  () => P.hind3, w => { P.hind3 = w; if (P.ex.x > XB - 2) P.ex.x = 10; hindernisseBauen(); sichtbarkeit(); });
+
+/* ---------- Regler ---------- */
+const R = {};
+R.gamma = regler($("regler"), { id: "gamma", name: "Dämpfung γ", min: 0, max: 3, schritt: 0.1, wert: P.gamma, einheit: "1/s", stellen: 1,
+  beiAenderung: v => { P.gamma = v; aufbauen(); } });
+R.f = regler($("regler"), { id: "f", name: "Frequenz f des Erregers", min: 5, max: 15, schritt: 0.5, wert: P.f, einheit: "Hz", stellen: 1,
+  beiAenderung: v => { P.f = v; } });
+R.b = regler($("regler"), { id: "b", name: "Spaltbreite b", min: 1, max: 10, schritt: 0.5, wert: P.b, einheit: "cm", stellen: 1,
+  beiAenderung: v => { P.b = v; hindernisseBauen(); } });
+R.g = regler($("regler"), { id: "g", name: "Abstand g (Spalte bzw. Erreger)", min: 3, max: 12, schritt: 0.5, wert: P.g, einheit: "cm", stellen: 1,
+  beiAenderung: v => { P.g = Math.max(v, P.b + 1); if (P.g !== v) R.g.setzen(P.g); hindernisseBauen(); } });
+R.h2 = regler($("regler"), { id: "h2", name: "Wassertiefe h₂ im Bereich 2", min: 4, max: 16, schritt: 1, wert: P.h2 * 10, einheit: "mm", stellen: 0,
+  beiAenderung: v => { P.h2 = v / 10; aufbauen(); } });
+R.alpha = regler($("regler"), { id: "alpha", name: "Einfallswinkel α", min: 0, max: 60, schritt: 5, wert: P.alpha, einheit: "°", stellen: 0,
+  beiAenderung: v => { P.alpha = v; hindernisseBauen(); } });
+R.kontrast = regler($("regler"), { id: "kontrast", name: "Kontrast der Darstellung", min: 0.5, max: 4, schritt: 0.25, wert: P.kontrast, einheit: "×", stellen: 2,
+  beiAenderung: v => { P.kontrast = v; } });
+const reglerBox = id => $("r_" + id).parentElement;
+
+$("btnRand").onclick = () => { P.randRefl = !P.randRefl; aufbauen(); sichtbarkeit(); };
+$("btnWandRefl").onclick = () => { P.wandRefl = !P.wandRefl; aufbauen(); sichtbarkeit(); };
+$("btnStrahlen").onclick = () => { P.strahlen = !P.strahlen; sichtbarkeit(); };
+
+/* ---------- Stufen ---------- */
+const STUFEN = [
+  { name: "1 Tropfen", info: "Kreiswellen erzeugen",
+    titel: "Stufe 1: Eine Welle entsteht",
+    auftrag: `<p>Tippe irgendwo ins Wasser – wie ein fallender Tropfen.</p>
+      <p><b>Beobachte:</b> Die Welle läuft als <b>Kreiswelle</b> gleichmäßig in alle Richtungen. Am Beckenrand wird sie
+      zurückgeworfen. Mit der Zeit wird sie schwächer. Der Korken tanzt nur auf und ab – er wandert nicht mit der Welle.</p>`,
+    tipp: "Tippen erzeugt einen Tropfen. Den Korken kann man verschieben.",
+    werte: { gamma: 0.4, randRefl: true, kontrast: 1 } },
+  { name: "2 Reflexion", info: "Wände und Spiegel",
+    titel: "Stufe 2: Reflexion",
+    auftrag: `<p>Wähle ein Hindernis und schicke eine <b>gerade Welle</b> los – oder tippe Tropfen ins Wasser.
+      Mit „Wand zeichnen“ baust du eigene Wände.</p>
+      <p><b>Beobachte:</b> Die Welle wird an der Wand zurückgeworfen. Es gilt: <b>Einfallswinkel = Reflexionswinkel</b>.
+      Ein Hohlspiegel sammelt eine gerade Welle in seinem Brennpunkt.</p>`,
+    tipp: "Werkzeug unten wählen: Tropfen, Wand zeichnen oder Wand wegwischen.",
+    werte: { gamma: 0.3, randRefl: false, hind2: "schraeg", werkzeug: "tropfen", kontrast: 1 } },
+  { name: "3 Beugung & Interferenz", info: "Erreger, Spalte, Hindernisse",
+    titel: "Stufe 3: Erreger, Beugung und Interferenz",
+    auftrag: `<p>Ein <b>Erreger</b> taucht regelmäßig ins Wasser. Setze ein Hindernis davor: Wand, Kante, Einfach-, Doppel- oder Dreifachspalt.</p>
+      <p><b>Beobachte:</b> Hinter einem schmalen Spalt läuft die Welle auch in den „Schatten“ (<b>Beugung</b>).
+      Hinter zwei oder drei Spalten überlagern sich die Wellen: Es gibt Streifen mit ruhigem Wasser (<b>Interferenz</b>).</p>`,
+    tipp: "Punkterreger lassen sich mit dem Finger verschieben. Tippen erzeugt zusätzlich Tropfen.",
+    werte: { gamma: 0.1, randRefl: false, erreger: "gerade", hind3: "keins", werkzeug: "tropfen", f: 10, b: 2, g: 6, ex: { x: 10, y: 20 }, kontrast: 1.5 } },
+  { name: "4 Brechung", info: "Wassertiefe ändern",
+    titel: "Stufe 4: Brechung",
+    auftrag: `<p>Im rechten Bereich hat das Wasser eine andere <b>Tiefe</b> (im Versuch: eine Glasplatte im Becken).</p>
+      <p><b>Beobachte:</b> Im flachen Wasser ist die Welle langsamer – die Wellenlänge wird kleiner, die Frequenz bleibt gleich.
+      Trifft die Welle schräg auf die Grenze, knickt sie ab (<b>Brechung</b>):
+      sin <i>α</i> / sin <i>β</i> = <i>c</i>₁ / <i>c</i>₂.</p>`,
+    tipp: "Tippen erzeugt zusätzlich Tropfen – auch im flachen Bereich ist die Kreiswelle kleiner.",
+    werte: { gamma: 0.1, randRefl: false, h2: 0.5, alpha: 30, f: 10, strahlen: true, kontrast: 1 } },
+];
+function sichtbarkeit() {
+  const s = P.stufe;
+  $("gWerkzeug").hidden = !(s === 2 || s === 3);
+  $("gHindernisse2").hidden = s !== 2;
+  $("gErreger").hidden = s !== 3;
+  $("gHindernisse3").hidden = s !== 3;
+  reglerBox("f").hidden = s < 3;
+  reglerBox("b").hidden = !(s === 3 && ["einfach", "doppel", "dreifach"].includes(P.hind3));
+  reglerBox("g").hidden = !(s === 3 && (["doppel", "dreifach"].includes(P.hind3) || P.erreger === "zwei"));
+  reglerBox("h2").hidden = s !== 4; reglerBox("alpha").hidden = s !== 4;
+  $("btnStrahlen").hidden = !(s === 4 || (s === 2 && P.hind2 === "schraeg"));
+  $("btnStrahlen").textContent = P.strahlen ? "Strahlen ausblenden" : "Strahlen einblenden";
+  const schalter = (k, an, text) => { k.textContent = `${text}: ${an ? "an" : "aus"}`; k.classList.toggle("an", an); k.classList.toggle("aus", !an); };
+  schalter($("btnRand"), P.randRefl, "am Beckenrand");
+  schalter($("btnWandRefl"), P.wandRefl, "an Wänden");
+  $("btnWandRefl").hidden = !(s === 2 || s === 3);
+  for (const el of [$("werkzeuge"), $("hindernisse2"), $("erregerWahl"), $("hindernisse3")]) el.markieren && el.markieren();
+}
+function tippAktualisieren() {
+  const st = STUFEN[P.stufe - 1];
+  $("szeneTipp").textContent = P.werkzeug === "zeichnen" && (P.stufe === 2 || P.stufe === 3) ? "Mit Finger oder Maus eine Wand ins Wasser zeichnen."
+    : P.werkzeug === "radieren" && (P.stufe === 2 || P.stufe === 3) ? "Über eine gezeichnete Wand wischen, um sie zu entfernen." : st.tipp;
+}
+function stufeSetzen(n, { tropfenStart = true } = {}) {
+  schritte.aus();
+  P.stufe = n; const st = STUFEN[n - 1];
+  Object.assign(P, JSON.parse(JSON.stringify(st.werte)));
+  for (const id of ["gamma", "f", "b", "g", "alpha", "kontrast"]) R[id].setzen(P[id]);
+  R.h2.setzen(P.h2 * 10);
+  P.wandRefl = true; wandZ.fill(0); hindernisseBauen(); ruhe();
+  for (const k of $("stufen").children) k.classList.toggle("aktiv", +k.dataset.stufe === n);
+  $("auftrag").innerHTML = `<h3>${st.titel}</h3>${st.auftrag}`;
+  P.korken = n === 4 ? { x: 44, y: 14 } : n === 3 ? { x: 44, y: 20 } : { x: 42, y: 26 };
+  tippAktualisieren(); sichtbarkeit();
+  if (n === 1 && tropfenStart) tropfen(24, 18);
+  lauf.start();
+}
+for (let n = 1; n <= 4; n++) {
+  const k = document.createElement("button"); k.dataset.stufe = n;
+  k.innerHTML = `<b>${STUFEN[n - 1].name}</b><small>${STUFEN[n - 1].info}</small>`;
+  k.onclick = () => stufeSetzen(n); $("stufen").appendChild(k);
+}
+
+/* ---------- Bedienung in der Wanne (Maus/Finger) ---------- */
+let zug = null;
+const wannenPunkt = e => { const r = $("szene").getBoundingClientRect(), m = szene.m;
+  return { x: (e.clientX - r.left - m.ox) / m.s, y: (e.clientY - r.top - m.oy) / m.s }; };
+const inWanne = q => q.x >= 0 && q.x <= LX && q.y >= 0 && q.y <= LY;
+const klemmen = (v, a, b) => Math.max(a, Math.min(b, v));
+$("szene").addEventListener("pointerdown", e => {
+  const q = wannenPunkt(e); if (!inWanne(q)) return;
+  $("szene").setPointerCapture(e.pointerId);
+  if (Math.hypot(q.x - P.korken.x, q.y - P.korken.y) < 1.6) { zug = { art: "korken" }; return; }
+  if (erregerPunkte().length && [...erregerPunkte(), P.ex].some(p => Math.hypot(q.x - p.x, q.y - p.y) < 1.6)) { zug = { art: "erreger", dy: q.y - P.ex.y }; return; }
+  const werkzeug = (P.stufe === 2 || P.stufe === 3) ? P.werkzeug : "tropfen";
+  if (werkzeug === "tropfen") { tropfen(q.x, q.y); if (!lauf.laeuft) lauf.start(); zug = null; }
+  else if (werkzeug === "zeichnen") { strecke(wandZ, q.x, q.y, q.x, q.y, 0.3); aufbauen(); zug = { art: "zeichnen", q }; }
+  else { strecke(wandZ, q.x, q.y, q.x, q.y, 1, 0); aufbauen(); zug = { art: "radieren", q }; }
+});
+$("szene").addEventListener("pointermove", e => {
+  if (!zug) return; const q = wannenPunkt(e);
+  if (zug.art === "korken") { P.korken = { x: klemmen(q.x, 0.5, LX - 0.5), y: klemmen(q.y, 0.5, LY - 0.5) };
+    diagramm.leeren(); messreihe.length = 0; }
+  else if (zug.art === "erreger") {
+    const xmax = P.stufe === 3 && P.hind3 !== "keins" ? XB - 2 : LX - 2, h = P.erreger === "zwei" ? P.g / 2 + 1 : 1;
+    P.ex = { x: klemmen(q.x, 2, xmax), y: klemmen(q.y - zug.dy, h, LY - h) }; quellenBauen();
+  } else if (zug.art === "zeichnen") { strecke(wandZ, zug.q.x, zug.q.y, q.x, q.y, 0.3); zug.q = q; aufbauen(); }
+  else if (zug.art === "radieren") { strecke(wandZ, zug.q.x, zug.q.y, q.x, q.y, 1, 0); zug.q = q; aufbauen(); }
+});
+const loslassen = () => { zug = null; };
+$("szene").addEventListener("pointerup", loslassen);
+$("szene").addEventListener("pointercancel", loslassen);
+
+/* ---------- Schritt für Schritt (Besprechung im Plenum) ---------- */
+function einstellen(werte, vorlaufSek = 0) {
+  P.wandRefl = true; Object.assign(P, werte);
+  for (const id of ["gamma", "f", "b", "g", "alpha", "kontrast"]) if (id in werte) R[id].setzen(P[id]);
+  if ("h2" in werte) R.h2.setzen(P.h2 * 10);
+  wandZ.fill(0); hindernisseBauen(); ruhe(); sichtbarkeit();
+  if (vorlaufSek) vorlauf(vorlaufSek);
+  lauf.start();
+}
+const SCHRITTE = {
+  1: [
+    { text: "Ein Tropfen fällt ins Wasser. Die Wasseroberfläche wird angehoben und schwingt – die Störung breitet sich nach allen Seiten aus.",
+      vorbereiten: () => { einstellen({ gamma: 0.4, randRefl: true }); tropfen(30, 20); lauf.pause(); vorlauf(0.15); } },
+    { text: "Es entsteht eine <b>Kreiswelle</b>: In alle Richtungen ist die Welle gleich schnell. Helle Ringe = Wellenberge, dunkle Ringe = Wellentäler.",
+      vorbereiten: () => { einstellen({ gamma: 0.4, randRefl: true }); tropfen(30, 20); vorlauf(0.45); lauf.pause(); } },
+    { text: "Am Beckenrand wird die Welle <b>reflektiert</b> und läuft zurück. Die Wellen gehen ungestört durcheinander hindurch.",
+      vorbereiten: () => { einstellen({ gamma: 0.4, randRefl: true }); tropfen(30, 20); vorlauf(0.95); } },
+    { text: "Der <b>Korken</b> bewegt sich nur auf und ab (Diagramm). Die Welle transportiert Energie, aber kein Wasser.",
+      vorbereiten: () => { einstellen({ gamma: 0.4, randRefl: true, korken: { x: 42, y: 20 } }); tropfen(24, 20); } },
+    { text: "Durch die <b>Dämpfung</b> verliert die Welle Energie und klingt ab. Probiere am Regler: Dämpfung γ = 0 und γ = 2 1/s.",
+      vorbereiten: () => { einstellen({ gamma: 1.2, randRefl: true }); tropfen(30, 20); } },
+    { text: "Zwei Tropfen gleichzeitig: Wo sich die Kreiswellen treffen, <b>überlagern</b> sie sich – und laufen danach unverändert weiter.",
+      vorbereiten: () => { einstellen({ gamma: 0.4, randRefl: true }); tropfen(20, 20); tropfen(40, 20); } },
+  ],
+  2: [
+    { text: "Eine gerade Welle läuft auf eine gerade Wand zu. Sie wird reflektiert und läuft genau zurück.",
+      vorbereiten: () => { einstellen({ hind2: "gerade", randRefl: false, gamma: 0.3 }); geradeWelle(); } },
+    { text: "Schräge Wand (45°): Die Welle wird zur Seite abgelenkt. <b>Einfallswinkel = Reflexionswinkel</b>, gemessen zum Lot.",
+      vorbereiten: () => { einstellen({ hind2: "schraeg", randRefl: false, gamma: 0.3, strahlen: true }); geradeWelle(); } },
+    { text: "Eine Kreiswelle trifft auf die gerade Wand. Die zurücklaufende Welle sieht so aus, als käme sie von einem Punkt <b>hinter</b> der Wand (Spiegelbild).",
+      vorbereiten: () => { einstellen({ hind2: "gerade", randRefl: false, gamma: 0.3 }); tropfen(34, 20); } },
+    { text: "Ein <b>Hohlspiegel</b> wirft eine gerade Welle so zurück, dass sie sich im <b>Brennpunkt</b> sammelt.",
+      vorbereiten: () => { einstellen({ hind2: "spiegel", randRefl: false, gamma: 0.3 }); geradeWelle(); } },
+    { text: "Umgekehrt: Ein Tropfen im Brennpunkt erzeugt nach der Reflexion eine <b>gerade Welle</b>.",
+      vorbereiten: () => { einstellen({ hind2: "spiegel", randRefl: false, gamma: 0.3 }); tropfen(42, 20); } },
+  ],
+  3: [
+    { text: "Ein gerader Erreger erzeugt eine <b>gerade Welle</b> (ebene Welle). Abstand zweier Wellenberge = Wellenlänge <i>λ</i> = <i>c</i>/<i>f</i>.",
+      vorbereiten: () => einstellen({ kontrast: 1.5, erreger: "gerade", hind3: "keins", f: 10 }, 2.2) },
+    { text: "Eine geschlossene <b>Wand</b>: Die Welle wird reflektiert. Hin- und rücklaufende Welle überlagern sich.",
+      vorbereiten: () => einstellen({ kontrast: 1.5, erreger: "gerade", hind3: "wand", f: 10 }, 2.2) },
+    { text: "Ein <b>breiter Spalt</b> (<i>b</i> = 8 cm, viel größer als <i>λ</i>): Die Welle läuft fast gerade hindurch, nur an den Rändern biegt sie etwas ab.",
+      vorbereiten: () => einstellen({ kontrast: 1.5, erreger: "gerade", hind3: "einfach", b: 8, f: 10 }, 2.2) },
+    { text: "Ein <b>schmaler Spalt</b> (<i>b</i> ≈ <i>λ</i>): Hinter dem Spalt entsteht eine Kreiswelle – die Welle läuft auch in den Schatten. Das ist <b>Beugung</b> (Huygens: jeder Punkt im Spalt sendet eine Elementarwelle aus).",
+      vorbereiten: () => einstellen({ kontrast: 2, erreger: "gerade", hind3: "einfach", b: 1.5, f: 10 }, 2.2) },
+    { text: "Auch an einer <b>Kante</b> wird die Welle gebeugt: Sie läuft hinter die Kante in den Schattenbereich.",
+      vorbereiten: () => einstellen({ kontrast: 2, erreger: "gerade", hind3: "kante", f: 10 }, 2.2) },
+    { text: "<b>Doppelspalt</b>: Die beiden Kreiswellen überlagern sich. Es entstehen Streifen mit starker Bewegung und dazwischen Streifen mit ruhigem Wasser (<b>Interferenz</b>).",
+      vorbereiten: () => einstellen({ kontrast: 2, erreger: "gerade", hind3: "doppel", b: 1.5, g: 6, f: 10 }, 2.4) },
+    { text: "<b>Dreifachspalt</b>: Die hellen Streifen werden schärfer, dazwischen gibt es zusätzliche schwache Streifen.",
+      vorbereiten: () => einstellen({ kontrast: 2, erreger: "gerade", hind3: "dreifach", b: 1.5, g: 6, f: 10 }, 2.4) },
+    { text: "<b>Zwei Punkterreger</b> im Takt – ganz ohne Spalt – erzeugen dasselbe Interferenzmuster wie der Doppelspalt.",
+      vorbereiten: () => einstellen({ kontrast: 2, erreger: "zwei", hind3: "keins", g: 6, f: 10, ex: { x: 20, y: 20 } }, 2.0) },
+  ],
+  4: [
+    { text: "Die Welle trifft <b>senkrecht</b> (α = 0°) auf das flache Wasser. Dort ist sie langsamer: Die Wellenlänge wird kleiner, die Richtung bleibt gleich.",
+      vorbereiten: () => einstellen({ alpha: 0, h2: 0.5, f: 10, strahlen: true }, 2.4) },
+    { text: "Die Welle trifft <b>schräg</b> (α = 30°) auf die Grenze: Im flachen Wasser knickt sie <b>zum Lot hin</b> ab (β &lt; α). Das ist <b>Brechung</b>.",
+      vorbereiten: () => einstellen({ alpha: 30, h2: 0.5, f: 10, strahlen: true }, 2.4) },
+    { text: "Noch flacher (<i>h</i>₂ = 4 mm): Die Welle wird noch langsamer und stärker gebrochen.",
+      vorbereiten: () => einstellen({ alpha: 30, h2: 0.4, f: 10, strahlen: true }, 2.4) },
+    { text: "Jetzt ist Bereich 2 <b>tiefer</b>: Die Welle wird schneller, die Wellenlänge größer – sie knickt <b>vom Lot weg</b> ab (β &gt; α).",
+      vorbereiten: () => einstellen({ alpha: 30, h2: 1.6, f: 10, strahlen: true }, 2.4) },
+    { text: "Bei großem Einfallswinkel kann die Welle nicht mehr in den tieferen Bereich: <b>Totalreflexion</b>.",
+      vorbereiten: () => einstellen({ alpha: 55, h2: 1.6, f: 10, strahlen: true }, 2.4) },
+  ],
+};
+let schritte = { aus() {}, aktiv: false };
+$("btnSchrittmodus").onclick = () => {
+  if (schritte.aktiv) { schritte.aus(); $("btnSchrittmodus").classList.remove("aktiv"); return; }
+  schritte = schrittmodus(SCHRITTE[P.stufe]); schritte.an(); $("btnSchrittmodus").classList.add("aktiv");
+};
+
+/* ---------- Erklärung ---------- */
+$("infoText").innerHTML = `
+  <p>Die Simulation zeigt eine Wellenwanne von oben (60 cm × 40 cm). Die Farbe gibt die Höhe der Wasseroberfläche an:
+  <b>hell = Wellenberg</b>, <b>dunkel = Wellental</b> – so wie im echten Versuch, wenn Licht von oben durch das Wasser
+  auf einen Schirm fällt.</p>
+  <p>Jeder Punkt der Oberfläche wird von seinen Nachbarn mitgezogen. Daraus folgt die <b>Wellengleichung</b>
+  ∂²<i>y</i>/∂<i>t</i>² = <i>c</i>²·(∂²<i>y</i>/∂<i>x</i>² + ∂²<i>y</i>/∂<i>z</i>²) − <i>γ</i>·∂<i>y</i>/∂<i>t</i>.
+  Die Ausbreitungsgeschwindigkeit hängt von der Wassertiefe <i>h</i> ab: <i>c</i> = √(<i>g</i>·<i>h</i>)
+  (gilt für Wellen in flachem Wasser). Bei <i>h</i> = 9 mm ist <i>c</i> ≈ 30 cm/s.
+  Die Dämpfung <i>γ</i> sorgt dafür, dass die Wellen abklingen.</p>
+  <p>Ein Erreger schwingt mit der Frequenz <i>f</i>. Daraus ergibt sich die Wellenlänge <i>λ</i> = <i>c</i>/<i>f</i>.
+  An Wänden wird die Welle reflektiert, ohne dass aus einem Berg ein Tal wird. Der „Strand“ am Rand
+  (gelbe Linie) schluckt die Wellen – wie die schrägen Ränder einer echten Wellenwanne.
+  Mit den Schaltern „Reflexion“ lässt sich die Reflexion am Beckenrand und an Wänden ein- und ausschalten;
+  ausgeschaltet liegt vor der Wand eine Dämpfungszone (sandfarben), die die Welle schluckt.</p>
+  <p><b>Vereinfachungen:</b> Echte Wellen in der Wellenwanne sind zusätzlich Kapillarwellen (Oberflächenspannung);
+  dann ist <i>c</i> etwas größer und hängt auch von <i>f</i> ab. Für Reflexion, Beugung, Interferenz und Brechung
+  ändert das nichts am Verhalten.</p>
+  <p class="klein">Rechnung: Gitter mit 300 × 200 Punkten (Abstand 2 mm), Zeitschritt 3 ms, Leapfrog-Verfahren.</p>`;
+
+/* ---------- Start ---------- */
+const lauf = new Schleife({ dt: DT, schritt: physikSchritt,
+  bild: () => { szeneZeichnen(); diagrammeZeichnen(); messwerteZeigen(); } });
+bedienungEinrichten(lauf, { reset: () => { ruhe(); }, einzel: () => lauf.einzelschritt(0.05) });
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT") return;
+  if (["1", "2", "3", "4"].includes(e.key)) stufeSetzen(+e.key);
+});
+$("btnCSV").onclick = () => speichern("wellenwanne_korken.csv",
+  "t in s;y in mm\n" + messreihe.map(z => z.map(w => w.toFixed(4).replace(".", ",")).join(";")).join("\n"), "text/csv");
+$("btnPNG").onclick = () => alsPNG("wellenwanne.png", [$("szene"), P.dia === "korken" ? $("diagramm") : $("schnitt")]);
+diagrammWahl("korken");
+stufeSetzen(1);
+window.__ww = { P, Z, get u1() { return u1; }, zelle, vorlauf, stufeSetzen, einstellen, tropfen, geradeWelle, ruhe, lauf, c1, c2, brechwinkel };
+</script>
+</body>
+</html>
